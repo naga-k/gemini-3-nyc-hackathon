@@ -73,25 +73,16 @@ export const ACTIONS: GameAction[] = [
     type: "solo",
   },
 
-  // ─── Stage 3: Demo Day ─────────────────────────────
+  // Demo Day pitch unlocks within YC stage after 2 actions
   {
     id: "demo_day_pitch",
     label: "Give Your Pitch",
     emoji: "🎤",
-    description: "Pitch VCs. Lead with traction if you have it.",
+    description: "Demo Day. Lead with traction if you have it.",
     energyCost: 2,
-    stages: ["demo-day"],
+    stages: ["yc"],
     type: "scene",
     sceneId: "demo_day",
-  },
-  {
-    id: "deep_breath",
-    label: "Deep Breath",
-    emoji: "🧘",
-    description: "Center yourself before the big moment.",
-    energyCost: 0,
-    stages: ["demo-day"],
-    type: "solo",
   },
 
   // ─── Stage 4: Post-Demo Day ────────────────────────

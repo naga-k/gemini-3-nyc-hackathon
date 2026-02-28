@@ -4,34 +4,39 @@ import { useGameStore, STAGE_ORDER } from "@/lib/gameState";
 import { STAGES } from "@/lib/stages";
 import type { Stage } from "@/lib/gameState";
 
+// Only show these stages in the header (Demo Day is inside YC, post-demo removed)
+const VISIBLE_STAGES: Stage[] = ["garage", "yc", "demo-day"];
+
 export default function StageHeader() {
   const stage = useGameStore((s) => s.stage);
   const turn = useGameStore((s) => s.turn);
-  const advanceStage = useGameStore((s) => s.advanceStage);
   const currentIndex = STAGE_ORDER.indexOf(stage);
 
   // Cheat: double-click a stage to jump to it
   const handleCheat = (targetStage: Stage) => {
     if (targetStage === stage) return;
-    // Give some resources when cheating forward
     useGameStore.setState((s) => ({
+      stage: targetStage,
       metrics: {
         energy: 5,
         runway: Math.max(s.metrics.runway, 500000),
         hype: Math.max(s.metrics.hype, 40),
       },
       activeScene: null,
+      actionsThisStage: 0,
     }));
-    advanceStage(targetStage);
+    useGameStore.getState().addKeyEvent(`Cheated to ${targetStage} stage`);
   };
+
+  const visibleStages = STAGES.filter((s) => VISIBLE_STAGES.includes(s.id));
 
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
       <div className="flex items-center gap-1">
-        {STAGES.filter((s) => s.id !== "layoff").map((s) => {
+        {visibleStages.map((s, i) => {
           const idx = STAGE_ORDER.indexOf(s.id);
-          const isActive = idx === currentIndex;
-          const isCompleted = idx < currentIndex;
+          const isActive = idx === currentIndex || (s.id === "yc" && stage === "demo-day");
+          const isCompleted = idx < currentIndex && !isActive;
 
           return (
             <div key={s.id} className="flex items-center">
@@ -47,7 +52,7 @@ export default function StageHeader() {
               >
                 {s.name}
               </div>
-              {idx < STAGES.length - 1 && s.id !== "win" && (
+              {i < visibleStages.length - 1 && (
                 <div
                   className={`w-6 h-0.5 ${
                     isCompleted ? "bg-green-600" : "bg-zinc-700"
