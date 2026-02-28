@@ -75,28 +75,40 @@ function LayoffScene({ onContinue }: { onContinue: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center">
-      {/* Video player */}
-      <div className="w-full max-w-3xl">
+      {/* Video with subtitle overlay */}
+      <div className="w-full max-w-3xl relative">
         <video
           ref={videoRef}
           src="/assets/scene-layoff.mp4"
           autoPlay
+          playsInline
           className="w-full rounded-lg"
           onEnded={() => setVideoEnded(true)}
         />
-      </div>
-
-      {/* Button appears after video ends */}
-      <div className="w-full max-w-3xl px-6 py-6 text-center">
-        {videoEnded && (
-          <button
-            onClick={onContinue}
-            className="bg-orange-600 hover:bg-orange-500 px-6 py-3 rounded-lg font-medium transition-colors animate-fade-in"
-          >
-            What now? &rarr;
-          </button>
+        {/* Subtitle while video plays */}
+        {!videoEnded && (
+          <div className="absolute bottom-4 left-0 right-0 text-center px-6">
+            <p className="inline-block bg-black/70 backdrop-blur-sm rounded-lg px-4 py-2 text-white text-lg font-medium">
+              We&apos;re restructuring. Your role is being eliminated.
+            </p>
+          </div>
         )}
       </div>
+
+      {/* After video: dramatic reveal */}
+      {videoEnded && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in">
+          <p className="text-zinc-500 text-sm uppercase tracking-[0.3em] mb-4">You&apos;ve been laid off.</p>
+          <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">Now what?</h2>
+          <div className="w-16 h-px bg-orange-500 my-4" />
+          <button
+            onClick={onContinue}
+            className="mt-2 bg-orange-600 hover:bg-orange-500 px-8 py-3 rounded-lg font-medium transition-all hover:scale-105 active:scale-95"
+          >
+            Continue &rarr;
+          </button>
+        </div>
+      )}
     </div>
   );
 }

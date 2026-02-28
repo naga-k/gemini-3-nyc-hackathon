@@ -14,7 +14,7 @@ const MODEL = "gemini-2.5-flash-preview-tts";
 
 // Map NPCs to different Gemini voice presets
 const NPC_VOICES: Record<NpcId, string> = {
-  garry: "Kore",
+  garry: "Orus",
   user: "Leda",
   batchmate: "Charon",
   thiel: "Orus",

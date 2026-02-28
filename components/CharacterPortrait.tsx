@@ -35,13 +35,23 @@ const SCENE_VISUALS: Record<string, SceneVisualConfig> = {
   },
   user_chat_1: {
     bg: "/assets/scene-talk-user.png",
-    npcMouth: { left: 68.0, top: 42.0, width: 2.5 },
-    playerMouth: { left: 32.0, top: 42.0, width: 2.5, flip: true },
+    npcMouth: { left: 74.2, top: 42.3, width: 3.5 },
+    playerMouth: { left: 25.9, top: 42.3, width: 4.3, flip: true },
   },
   user_chat_2: {
     bg: "/assets/scene-talk-user.png",
-    npcMouth: { left: 68.0, top: 42.0, width: 2.5 },
-    playerMouth: { left: 32.0, top: 42.0, width: 2.5, flip: true },
+    npcMouth: { left: 74.2, top: 42.3, width: 3.5 },
+    playerMouth: { left: 25.9, top: 42.3, width: 4.3, flip: true },
+  },
+  yc_apply_1: {
+    bg: "/assets/scene-yc-interview.png",
+    npcMouth: { left: 30.0, top: 52.0, width: 3.0 },
+    playerMouth: { left: 80.0, top: 50.0, width: 3.0 },
+  },
+  yc_apply_2: {
+    bg: "/assets/scene-yc-interview.png",
+    npcMouth: { left: 30.0, top: 52.0, width: 3.0 },
+    playerMouth: { left: 80.0, top: 50.0, width: 3.0 },
   },
   _default: {
     bg: "/assets/scene-yc.png",
@@ -278,16 +288,15 @@ export default function CharacterPortrait() {
   }, [activeScene]);
 
   return (
-    <div className="w-full bg-black overflow-hidden" style={{ maxHeight: "50vh" }}>
+    <div className="absolute inset-0 z-0">
       <div
         data-mouth-container
-        className="relative w-full"
-        style={{ aspectRatio: "688 / 384" }}
+        className="relative w-full h-full"
       >
         <img
           src={config.bg}
           alt="Scene background"
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 w-full h-full object-cover"
           draggable={false}
         />
 

@@ -6,6 +6,8 @@ import MetricsBar from "./MetricsBar";
 import SceneView from "./SceneView";
 import ActionPanel from "./ActionPanel";
 import CutsceneOverlay from "./CutsceneOverlay";
+import CharacterPortrait from "./CharacterPortrait";
+import { getVisualConfig } from "./CharacterPortrait";
 import { getStageConfig } from "@/lib/stages";
 
 export default function GameScreen() {
@@ -55,14 +57,21 @@ export default function GameScreen() {
 
           {/* Main Content: Scene or Hub */}
           {activeScene ? (
-            <SceneView />
+            <div className="flex-1 relative min-h-0">
+              <CharacterPortrait />
+              <SceneView />
+            </div>
           ) : (
-            <div className="flex-1 flex flex-col">
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center text-zinc-600">
-                  <p className="text-lg">Choose an action</p>
-                  <p className="text-sm mt-1">Each one costs energy 🔥</p>
-                </div>
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Stage background */}
+              <div className="flex-1 relative overflow-hidden">
+                <img
+                  src={getVisualConfig(stage, null).bg}
+                  alt="Stage background"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  draggable={false}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
               </div>
               <ActionPanel />
             </div>
