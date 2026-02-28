@@ -277,9 +277,6 @@ export default function CharacterPortrait() {
     lastSpokenPlayerMsgCount.current = 0;
   }, [activeScene]);
 
-  // Don't render portrait when no scene is active
-  if (!activeScene) return null;
-
   return (
     <div className="w-full bg-black overflow-hidden" style={{ maxHeight: "50vh" }}>
       <div
