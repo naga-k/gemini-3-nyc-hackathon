@@ -85,6 +85,14 @@ IMPORTANT — MOBILE GAME FORMAT:
 Keep dialogue SHORT. 1-3 sentences max. This is a mobile game, not a novel.
 The player does NOT type freely — they pick from predefined choices.
 React specifically to what they chose. Be punchy and direct.
+
+CONVERSATION FLOW CONTROL:
+You control when the conversation ends via "scene_complete". Use it wisely:
+- Set "scene_complete": false to keep the conversation going when there's more to explore, tension to build, or you haven't made your decision yet.
+- Set "scene_complete": true when you've reached a natural conclusion — you've made your verdict, given key advice, or the exchange has run its course.
+- Aim for 2-5 exchanges total. Don't drag it out, but don't rush to a conclusion on the first reply either.
+- Build tension: push back, ask follow-ups, test the founder BEFORE giving your final answer.
+- For important decisions (YC acceptance, investment offers), NEVER decide on the first exchange. Make them earn it across 2-3 turns.
 `;
 
 // ─── NPC System Prompts ──────────────────────────────────

@@ -49,7 +49,7 @@ const SCENE_VISUALS: Record<string, SceneVisualConfig> = {
   },
 };
 
-function getVisualConfig(stage: string, activeScene: string | null): SceneVisualConfig {
+export function getVisualConfig(stage: string, activeScene: string | null): SceneVisualConfig {
   if (activeScene && SCENE_VISUALS[activeScene]) return SCENE_VISUALS[activeScene];
   const stageKey = `_${stage}`;
   if (SCENE_VISUALS[stageKey]) return SCENE_VISUALS[stageKey];
