@@ -177,20 +177,44 @@ function MouthOverlay({
     };
   }, [isDragging, pos, label]);
 
+  // Hide mouth when not speaking (unless debug mode)
+  if (mouthState === "closed" && !debugMode) return null;
+
   return (
-    <img
-      src={mouthSrc}
-      alt=""
-      className={`absolute ${debugMode ? "cursor-grab ring-2 ring-red-500/50" : "pointer-events-none"} ${isDragging ? "cursor-grabbing" : ""}`}
-      style={{
-        left: `${pos.left}%`,
-        top: `${pos.top}%`,
-        width: `${pos.width}%`,
-        transform: `translate(-50%, -50%)${config.flip ? " scaleX(-1)" : ""}`,
-      }}
-      draggable={false}
-      onMouseDown={handleMouseDown}
-    />
+    <>
+      <img
+        src={mouthSrc}
+        alt=""
+        className={`absolute ${debugMode ? "cursor-grab ring-2 ring-red-500/50" : "pointer-events-none"} ${isDragging ? "cursor-grabbing" : ""}`}
+        style={{
+          left: `${pos.left}%`,
+          top: `${pos.top}%`,
+          width: `${pos.width}%`,
+          transform: `translate(-50%, -50%)${config.flip ? " scaleX(-1)" : ""}`,
+        }}
+        draggable={false}
+        onMouseDown={handleMouseDown}
+      />
+      {/* Width slider in debug mode */}
+      {debugMode && (
+        <div
+          className="absolute bg-black/80 rounded px-2 py-1 text-xs text-white z-20 flex items-center gap-1"
+          style={{ left: `${pos.left}%`, top: `${pos.top + 4}%`, transform: "translateX(-50%)" }}
+        >
+          <span className="text-zinc-400">{label}</span>
+          <input
+            type="range"
+            min="1"
+            max="15"
+            step="0.1"
+            value={pos.width}
+            onChange={(e) => setPos((p) => ({ ...p, width: parseFloat(e.target.value) }))}
+            className="w-16"
+          />
+          <span>{pos.width.toFixed(1)}%</span>
+        </div>
+      )}
+    </>
   );
 }
 
