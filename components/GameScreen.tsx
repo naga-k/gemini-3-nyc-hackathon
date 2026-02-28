@@ -4,6 +4,7 @@ import { useGameStore } from "@/lib/gameState";
 import StageHeader from "./StageHeader";
 import MetricsBar from "./MetricsBar";
 import SceneView from "./SceneView";
+import CharacterPortrait from "./CharacterPortrait";
 import ActionPanel from "./ActionPanel";
 import CutsceneOverlay from "./CutsceneOverlay";
 import { getStageConfig } from "@/lib/stages";
@@ -34,6 +35,9 @@ export default function GameScreen() {
       <CutsceneOverlay />
       <StageHeader />
       <MetricsBar />
+
+      {/* Character portrait with lip-synced voice */}
+      <CharacterPortrait />
 
       {/* Stage Setting */}
       {!activeScene && (
