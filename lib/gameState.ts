@@ -137,7 +137,7 @@ function applySpecialEventRewards(metrics: Metrics, event: SpecialEvent): Metric
   const m = { ...metrics };
   switch (event) {
     case "yc_accepted":
-      m.runway += 125000;
+      m.runway += 500000;
       m.hype = Math.min(100, m.hype + 15);
       break;
     case "angel_investment":
@@ -430,11 +430,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       if (data.special_event) {
+        // Demo Day success = game ends
+        if (data.special_event === "demo_day_success") {
+          set({ activeCutscene: "demo_day_success", stage: "win" });
+          return;
+        }
         set({ activeCutscene: data.special_event });
       }
 
       if (newMetrics.runway <= 0) set({ activeCutscene: "game_over" });
-      if (newMetrics.hype * newMetrics.runway >= 1_000_000_000) set({ activeCutscene: "unicorn" });
+      if (newMetrics.hype * newMetrics.runway >= 1_000_000_000) set({ activeCutscene: "unicorn", stage: "win" });
     } catch {
       set({ isLoading: false, sceneStep: "greeting" });
     }

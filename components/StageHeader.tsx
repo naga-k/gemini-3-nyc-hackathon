@@ -17,7 +17,7 @@ export default function StageHeader() {
     useGameStore.setState((s) => ({
       metrics: {
         energy: 5,
-        runway: Math.max(s.metrics.runway, 50000),
+        runway: Math.max(s.metrics.runway, 500000),
         hype: Math.max(s.metrics.hype, 40),
       },
       activeScene: null,

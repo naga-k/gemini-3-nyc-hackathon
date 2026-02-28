@@ -270,7 +270,7 @@ export default function CutsceneOverlay() {
   > = {
     yc_accepted: {
       title: "YOU'RE IN!",
-      body: `Welcome to Y Combinator.\n\nGarry Tan accepted ${startupName} into the batch.\n\n+$125,000 funding. Energy restored.\n\nTime to build.`,
+      body: `Welcome to Y Combinator.\n\nGarry Tan accepted ${startupName} into the batch.\n\n+$500,000 funding. Energy restored.\n\nTime to build.`,
       emoji: "🏆",
       color: "border-orange-500/50",
       buttonText: "Enter YC Batch →",

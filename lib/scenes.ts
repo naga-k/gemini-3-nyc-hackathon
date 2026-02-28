@@ -166,38 +166,14 @@ Generate 3 choices:
         id: "demo_day_pitch",
         npc: { id: "garry", name: "Garry Tan", emoji: "🧑‍💼" },
         sceneType: "demo_day_pitch",
-        sceneContext: "Player is about to give their Demo Day pitch to 500+ investors. Garry is watching from the front row.",
+        sceneContext: "Player is about to give their Demo Day pitch to 500+ investors. Garry is watching from the front row. This is the FINAL moment of the game.",
         geminiInstructions: `Generate a high-stakes greeting — the room is quiet, hundreds of investors watching.
 Reference the player's full journey from application to now.
 Generate 3 pitch style choices:
 1. Traction-led pitch (paying users, revenue, real metrics) — BEST if they have paying users
 2. Narrative pitch (personal story, from layoff to here) — fallback if weak traction
 3. Bold vision pitch (we're building a platform, not a feature) — risky but high ceiling
-Set stage_advance to true in the REACTION call if decent. special_event "demo_day_success" if good.`,
-      },
-      {
-        id: "demo_day_thiel",
-        npc: { id: "thiel", name: "Peter Thiel", emoji: "🏛️" },
-        sceneType: "demo_day_thiel_question",
-        sceneContext: "Peter Thiel just watched the Demo Day pitch and has a contrarian question.",
-        geminiInstructions: `Generate a greeting that's Thiel's signature contrarian question — reference the pitch the player just gave.
-Generate 2-3 choices:
-1. A bold, contrarian answer matching Thiel's energy
-2. A straightforward honest answer
-3. (Optional) A deeper infrastructure-level answer
-Do NOT set stage_advance or special_event in the reaction.`,
-      },
-      {
-        id: "demo_day_marc",
-        npc: { id: "a16z", name: "Marc Andreessen", emoji: "🌐" },
-        sceneType: "demo_day_marc_test",
-        sceneContext: "Marc Andreessen is testing the founder's conviction by suggesting a pivot.",
-        geminiInstructions: `Generate a greeting where Marc suggests pivoting to enterprise or a different market — this is a TEST.
-Generate 2-3 choices:
-1. Push back firmly (defend your vision — the RIGHT answer)
-2. Agree with the pivot (shows lack of conviction — WRONG answer)
-3. (Optional) Strategic middle ground
-Do NOT set stage_advance or special_event in the reaction.`,
+ALWAYS set scene_complete: true and special_event "demo_day_success" in your reaction. This is the game finale.`,
       },
     ],
   } as DemoDayTemplate,

@@ -37,9 +37,9 @@ export default function MetricsBar() {
         </div>
       </div>
 
-      {/* Runway */}
+      {/* Money (Stripe-style) */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-zinc-500 uppercase tracking-wide">Runway</span>
+        <span className="text-xs text-zinc-500 tracking-wide">stripe:</span>
         <span className={`font-mono font-bold ${runwayColor}`}>
           {formatMoney(metrics.runway)}
         </span>
