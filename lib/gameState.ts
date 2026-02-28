@@ -8,7 +8,7 @@ export type Stage = "layoff" | "garage" | "yc" | "demo-day" | "post-demo" | "win
 
 export const STAGE_ORDER: Stage[] = ["layoff", "garage", "yc", "demo-day", "post-demo", "win"];
 
-export type NpcId = "garry" | "user" | "batchmate" | "thiel" | "a16z" | "elon";
+export type NpcId = "garry" | "user" | "batchmate" | "thiel" | "a16z" | "elon" | "player";
 
 export type SpecialEvent =
   | "yc_accepted"

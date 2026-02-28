@@ -60,6 +60,13 @@ export const NPC_CONFIG: Record<NpcId, NpcConfig> = {
     availableStages: ["post-demo"],
     triggeredByAction: "talk_elon",
   },
+  player: {
+    id: "player",
+    name: "You",
+    emoji: "🧑‍💻",
+    description: "The founder",
+    availableStages: [],
+  },
 };
 
 // ─── Cross-NPC Memory Instruction ────────────────────────
@@ -314,6 +321,7 @@ Respond ONLY in valid JSON:
   "stage_advance": false,
   "special_event": string or null
 }`,
+  player: "",
 };
 
 export function getNpcPrompt(npcId: NpcId): string {

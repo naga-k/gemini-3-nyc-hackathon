@@ -56,70 +56,6 @@ function getVisualConfig(stage: string, activeScene: string | null): SceneVisual
   return SCENE_VISUALS._default;
 }
 
-// ─── Mic-based mouth animation ──────────────────────────
-function useMicMouth(): MouthState {
-  const [micMouth, setMicMouth] = useState<MouthState>("closed");
-  const streamRef = useRef<MediaStream | null>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
-  const rafRef = useRef<number>(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-
-        const ctx = new AudioContext();
-        ctxRef.current = ctx;
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-
-        const data = new Uint8Array(analyser.frequencyBinCount);
-
-        const tick = () => {
-          if (cancelled) return;
-          analyser.getByteFrequencyData(data);
-
-          let sum = 0;
-          for (let i = 0; i < data.length; i++) sum += data[i];
-          const avg = sum / data.length / 255;
-
-          if (avg < 0.03) {
-            setMicMouth("closed");
-          } else {
-            const low = data[4]! / 255;
-            const mid = data[12]! / 255;
-            const high = data[24]! / 255;
-            const max = Math.max(low, mid, high);
-            if (max === low) setMicMouth(avg > 0.1 ? "ou" : "oh");
-            else if (max === mid) setMicMouth(avg > 0.1 ? "aa" : "oh");
-            else setMicMouth(avg > 0.1 ? "ee" : "ih");
-          }
-
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-      } catch {
-        // Mic permission denied
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      ctxRef.current?.close();
-    };
-  }, []);
-
-  return micMouth;
-}
-
 // ─── Single mouth overlay ───────────────────────────────
 function MouthOverlay({
   mouthState,
@@ -195,7 +131,6 @@ function MouthOverlay({
         draggable={false}
         onMouseDown={handleMouseDown}
       />
-      {/* Width slider in debug mode */}
       {debugMode && (
         <div
           className="absolute bg-black/80 rounded px-2 py-1 text-xs text-white z-20 flex items-center gap-1"
@@ -221,14 +156,17 @@ function MouthOverlay({
 // ─── Main component ─────────────────────────────────────
 export default function CharacterPortrait() {
   const [npcMouthState, setNpcMouthState] = useState<MouthState>("closed");
-  const lipSyncRef = useRef<LipSyncEngine | null>(null);
+  const [playerMouthState, setPlayerMouthState] = useState<MouthState>("closed");
+  const npcLipSyncRef = useRef<LipSyncEngine | null>(null);
+  const playerLipSyncRef = useRef<LipSyncEngine | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [debugMode, setDebugMode] = useState(true);
 
-  // Track what we've already spoken to avoid re-triggering
+  // Track what we've already spoken
   const lastSpokenGreeting = useRef<string | null>(null);
   const lastSpokenReaction = useRef<string | null>(null);
-  const lastSpokenMsgCount = useRef<number>(0);
+  const lastSpokenNpcMsgCount = useRef<number>(0);
+  const lastSpokenPlayerMsgCount = useRef<number>(0);
 
   const stage = useGameStore((s) => s.stage);
   const activeScene = useGameStore((s) => s.activeScene);
@@ -239,87 +177,104 @@ export default function CharacterPortrait() {
   const sceneMessages = useGameStore((s) => s.sceneMessages);
 
   const config = getVisualConfig(stage, activeScene);
-  const hasTwoMouths = !!config.playerMouth;
 
   // Get current NPC from active scene template
   const currentNpcId: NpcId | null = activeScene
     ? resolveCurrentTemplatePart(activeScene, demoDayPartIndex)?.npc.id ?? null
     : null;
 
-  // Mic-based player mouth
-  const micMouth = useMicMouth();
-  const playerMouthState = hasTwoMouths ? micMouth : ("closed" as MouthState);
-
-  // NPC lip-sync engine
+  // Init both lip-sync engines
   useEffect(() => {
-    lipSyncRef.current = new LipSyncEngine((state) => setNpcMouthState(state));
-    return () => { lipSyncRef.current?.dispose(); };
+    npcLipSyncRef.current = new LipSyncEngine((state) => setNpcMouthState(state));
+    playerLipSyncRef.current = new LipSyncEngine((state) => setPlayerMouthState(state));
+    return () => {
+      npcLipSyncRef.current?.dispose();
+      playerLipSyncRef.current?.dispose();
+    };
   }, []);
 
-  const speakDialogue = useCallback(async (dialogue: string, npcId: NpcId) => {
-    if (!lipSyncRef.current) return;
-    setIsSpeaking(true);
+  const speakDialogue = useCallback(async (
+    dialogue: string,
+    voiceId: NpcId,
+    engine: LipSyncEngine | null,
+    setActive: (v: boolean) => void
+  ) => {
+    if (!engine) return;
+    setActive(true);
     try {
       const res = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dialogue, npcId }),
+        body: JSON.stringify({ dialogue, npcId: voiceId }),
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.audio) await lipSyncRef.current.playAudio(data.audio);
+        if (data.audio) await engine.playAudio(data.audio);
       }
     } catch { /* silent */ }
-    setIsSpeaking(false);
+    setActive(false);
   }, []);
 
-  // Speak NPC greeting when it appears
+  const speakNpc = useCallback((dialogue: string) => {
+    if (!currentNpcId) return;
+    npcLipSyncRef.current?.stop();
+    speakDialogue(dialogue, currentNpcId, npcLipSyncRef.current, setIsSpeaking);
+  }, [currentNpcId, speakDialogue]);
+
+  const speakPlayer = useCallback((dialogue: string) => {
+    playerLipSyncRef.current?.stop();
+    speakDialogue(dialogue, "player", playerLipSyncRef.current, () => {});
+  }, [speakDialogue]);
+
+  // Speak NPC greeting
   useEffect(() => {
     if (!currentNpcId || !generatedGreeting) return;
     if (sceneStep !== "greeting") return;
     if (generatedGreeting === lastSpokenGreeting.current) return;
-
     lastSpokenGreeting.current = generatedGreeting;
-    lipSyncRef.current?.stop();
-    speakDialogue(generatedGreeting, currentNpcId);
-  }, [generatedGreeting, sceneStep, currentNpcId, speakDialogue]);
+    speakNpc(generatedGreeting);
+  }, [generatedGreeting, sceneStep, currentNpcId, speakNpc]);
 
-  // Speak NPC reaction when it appears
+  // Speak NPC reaction
   useEffect(() => {
     if (!currentNpcId || !lastNpcReaction) return;
     if (sceneStep !== "reaction") return;
     if (lastNpcReaction.dialogue === lastSpokenReaction.current) return;
-
     lastSpokenReaction.current = lastNpcReaction.dialogue;
-    lipSyncRef.current?.stop();
-    speakDialogue(lastNpcReaction.dialogue, currentNpcId);
-  }, [lastNpcReaction, sceneStep, currentNpcId, speakDialogue]);
+    speakNpc(lastNpcReaction.dialogue);
+  }, [lastNpcReaction, sceneStep, currentNpcId, speakNpc]);
 
   // Speak NPC messages from continueScene
   useEffect(() => {
     if (!currentNpcId) return;
     const npcMsgs = sceneMessages.filter((m) => m.role === "npc");
-    if (npcMsgs.length <= lastSpokenMsgCount.current) return;
-
+    if (npcMsgs.length <= lastSpokenNpcMsgCount.current) return;
     const latest = npcMsgs[npcMsgs.length - 1];
-    lastSpokenMsgCount.current = npcMsgs.length;
+    lastSpokenNpcMsgCount.current = npcMsgs.length;
+    if (latest.text === lastSpokenGreeting.current || latest.text === lastSpokenReaction.current) return;
+    speakNpc(latest.text);
+  }, [sceneMessages, currentNpcId, speakNpc]);
 
-    if (
-      latest.text === lastSpokenGreeting.current ||
-      latest.text === lastSpokenReaction.current
-    ) return;
-
-    lipSyncRef.current?.stop();
-    speakDialogue(latest.text, currentNpcId);
-  }, [sceneMessages, currentNpcId, speakDialogue]);
+  // Speak player choices (voice over when player selects an option)
+  useEffect(() => {
+    if (!config.playerMouth) return; // Only in two-character scenes
+    const playerMsgs = sceneMessages.filter((m) => m.role === "player");
+    if (playerMsgs.length <= lastSpokenPlayerMsgCount.current) return;
+    const latest = playerMsgs[playerMsgs.length - 1];
+    lastSpokenPlayerMsgCount.current = playerMsgs.length;
+    speakPlayer(latest.text);
+  }, [sceneMessages, config.playerMouth, speakPlayer]);
 
   // Reset when scene changes
   useEffect(() => {
-    lipSyncRef.current?.stop();
+    npcLipSyncRef.current?.stop();
+    playerLipSyncRef.current?.stop();
     setNpcMouthState("closed");
+    setPlayerMouthState("closed");
     lastSpokenGreeting.current = null;
     lastSpokenReaction.current = null;
-    lastSpokenMsgCount.current = 0;
+    lastSpokenNpcMsgCount.current = 0;
+    lastSpokenPlayerMsgCount.current = 0;
   }, [activeScene]);
 
   // Don't render portrait when no scene is active

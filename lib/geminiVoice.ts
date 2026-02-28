@@ -14,20 +14,22 @@ const MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 // Map NPCs to different Gemini voice presets
 const NPC_VOICES: Record<NpcId, string> = {
   garry: "Kore",
-  user: "Puck",
+  user: "Leda",
   batchmate: "Charon",
   thiel: "Orus",
   a16z: "Zephyr",
   elon: "Fenrir",
+  player: "Puck",
 };
 
 const NPC_VOICE_INSTRUCTIONS: Record<NpcId, string> = {
   garry: "Speak as Garry Tan — warm, direct, encouraging but real. Builder-first energy. Keep it natural and conversational.",
-  user: "Speak as a regular person — friendly, down to earth, casual tone. You're a potential customer giving honest feedback.",
+  user: "Speak as a young woman — friendly, down to earth, casual tone. You're a potential customer giving honest feedback.",
   batchmate: "Speak as a fellow startup founder — energetic, supportive but subtly competitive. Casual peer-to-peer tone.",
   thiel: "Speak as Peter Thiel — quiet intensity, measured words, every sentence has weight. Terse and philosophical.",
   a16z: "Speak as Marc Andreessen — confident, big-picture thinking, techno-optimist energy. Bold and analytical.",
   elon: "Speak as Elon Musk — rapid-fire, unpredictable, mix of technical depth and absurdist humor. Chaotic energy.",
+  player: "Speak as a young male startup founder — confident but slightly nervous, passionate about your idea. Natural and conversational.",
 };
 
 export async function generateVoice(
