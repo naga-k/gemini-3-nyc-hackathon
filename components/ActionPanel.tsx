@@ -41,10 +41,10 @@ export default function ActionPanel() {
     executeAction(action.id);
   };
 
-  // Demo Day gating: need hype >= 35 and at least 3 actions
+  // Demo Day gating: need at least 2 actions in YC stage
   const isDemoDayGated = (actionId: string) => {
     if (actionId === "demo_day_pitch") {
-      return metrics.hype < 35 || actionsThisStage < 3;
+      return actionsThisStage < 2;
     }
     return false;
   };
@@ -86,7 +86,7 @@ export default function ActionPanel() {
               </span>
               {gated && (
                 <span className="text-[10px] text-yellow-500 mt-0.5">
-                  Need Hype 35+ & 3 actions
+                  Do 2 actions first
                 </span>
               )}
             </button>

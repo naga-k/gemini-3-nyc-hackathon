@@ -79,11 +79,12 @@ Generate 3 choices that represent different pitch styles:
 3. A personal story pitch (why you, why now)
 The choices should feel meaningfully different in approach.
 
-DECISION POLICY — YOU DECIDE whether to accept or reject. Use your judgment:
-- Check sceneHistory: did the player talk to users? If yes, what did they learn? Founders who talked to users and can reference real feedback are MUCH stronger.
-- A founder who coded + talked to users + has specific insights = strong candidate. Consider accepting (special_event "yc_accepted", stage_advance true).
-- A founder who only coded and gives a vague pitch with no user understanding = weak. Reject (special_event "yc_rejected").
-- You are NOT forced to reject. If the pitch is genuinely good and shows user understanding, accept them.`,
+DECISION POLICY:
+- Check gameState.payingUsers. If they have paying users, be impressed and lean positive.
+- If no paying users, be skeptical — "who's actually paying for this?"
+- Reference specific user conversations from sceneHistory if they exist.
+- Always set scene_complete: true so the game engine can resolve the outcome.
+- The game engine handles the actual accept/reject — just react naturally.`,
   },
 
   yc_apply_2: {
@@ -101,9 +102,10 @@ Generate 3 choices that show different types of growth:
 3. Show persistence with new proof/evidence
 The greeting MUST reference what happened in the first application.
 
-DECISION POLICY: The player is back after rejection. Look for GROWTH since last time.
-- If they've talked to more users, iterated, and show real learning: ACCEPT (special_event "yc_accepted", stage_advance true).
-- If they're just repeating the same pitch: reject again (special_event "yc_rejected").`,
+DECISION POLICY: The player is back after rejection. Check gameState.payingUsers.
+- If they now have paying users, acknowledge the growth.
+- If still no paying users, push back hard — "what changed?"
+- Always set scene_complete: true so the game engine resolves the outcome.`,
   },
 
   // ── Stage 2: YC Batch ──────────────────────────────────
@@ -168,9 +170,9 @@ Generate 3 choices:
         geminiInstructions: `Generate a high-stakes greeting — the room is quiet, hundreds of investors watching.
 Reference the player's full journey from application to now.
 Generate 3 pitch style choices:
-1. Data-driven pitch (metrics, growth charts, traction)
-2. Narrative pitch (personal story, from layoff to here)
-3. Bold vision pitch (we're building a platform, not a feature)
+1. Traction-led pitch (paying users, revenue, real metrics) — BEST if they have paying users
+2. Narrative pitch (personal story, from layoff to here) — fallback if weak traction
+3. Bold vision pitch (we're building a platform, not a feature) — risky but high ceiling
 Set stage_advance to true in the REACTION call if decent. special_event "demo_day_success" if good.`,
       },
       {

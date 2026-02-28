@@ -91,6 +91,7 @@ interface GameState {
   garryRejected: boolean;
   demoDayDone: boolean;
   actionsThisStage: number;
+  payingUsers: number;
 
   // UI state
   activeCutscene: SpecialEvent | "zuck_layoff" | "layoff_scene" | "building_scene" | "pick_startup" | null;
@@ -205,6 +206,7 @@ function buildGameStatePayload(state: GameState) {
     startupName: state.startupName,
     startupIdea: state.startupIdea,
     turn: state.turn,
+    payingUsers: state.payingUsers,
   };
 }
 
@@ -232,6 +234,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   garryRejected: false,
   demoDayDone: false,
   actionsThisStage: 0,
+  payingUsers: 0,
   activeCutscene: null,
   isLoading: false,
   actionFeedback: null,
@@ -260,6 +263,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       garryRejected: false,
       demoDayDone: false,
       actionsThisStage: 0,
+      payingUsers: 0,
     });
   },
 
@@ -380,6 +384,20 @@ export const useGameStore = create<GameState>((set, get) => ({
       );
       if (data.special_event) {
         newKeyEvents.push(`Event: ${data.special_event} (turn ${state.turn + 1})`);
+      }
+
+      // Deterministic YC acceptance: override LLM decision based on paying users
+      const isYcScene = state.activeScene === "yc_apply_1" || state.activeScene === "yc_apply_2";
+      if (isYcScene && data.scene_complete) {
+        if (state.payingUsers >= 1) {
+          // Force acceptance regardless of what LLM said
+          data.special_event = "yc_accepted";
+          data.stage_advance = true;
+        } else {
+          // Force rejection — need paying users first
+          data.special_event = "yc_rejected";
+          data.stage_advance = false;
+        }
       }
 
       let garryRejected = state.garryRejected;
@@ -541,6 +559,18 @@ The greeting should be the NPC's next line continuing the conversation.`;
       }
     }
 
+    // Grant paying user when completing a user conversation
+    const isUserScene = state.activeScene === "user_chat_1" || state.activeScene === "user_chat_2";
+    if (isUserScene && state.sceneMessages.length >= 2) {
+      const newCount = state.payingUsers + 1;
+      set({
+        payingUsers: newCount,
+        keyEvents: [...state.keyEvents, `Got paying user #${newCount}! Customer signed up after conversation.`],
+        actionFeedback: `💰 You got a paying user! (${newCount} total) +$1,500`,
+        metrics: { ...state.metrics, runway: state.metrics.runway + 1500, hype: Math.min(100, state.metrics.hype + 3) },
+      });
+    }
+
     // Return to hub
     set({
       activeScene: null,
@@ -559,9 +589,9 @@ The greeting should be the NPC's next line continuing the conversation.`;
   executeAction: (actionId: string) => {
     const state = get();
     const ACTION_EFFECTS: Record<string, { energy: number; runway: number; hype: number; feedback: string }> = {
-      code_mvp: { energy: -1, runway: 800, hype: 2, feedback: "🔨 Shipped a feature. First paying user! +$800, Hype +2." },
+      code_mvp: { energy: -1, runway: -500, hype: 1, feedback: "🔨 Shipped code. Burned cash on infra. -$500, Hype +1." },
       eat_ramen: { energy: 1, runway: -200, hype: 0, feedback: "🍜 Cheap fuel. Energy restored. (-$200)" },
-      iterate_product: { energy: -1, runway: 1500, hype: 3, feedback: "🔨 Shipped improvements. Users upgraded! +$1,500, Hype +3." },
+      iterate_product: { energy: -1, runway: 1000, hype: 3, feedback: "🔨 Shipped what users wanted. Growth! +$1,000, Hype +3." },
       practice_pitch: { energy: -1, runway: -300, hype: 2, feedback: "🎤 Getting sharper. Hype +2. (-$300)" },
       check_inbox: { energy: 0, runway: 0, hype: 1, feedback: "📱 52 unread from VCs. You feel validated. Hype +1." },
       deep_breath: { energy: 0, runway: 0, hype: 0, feedback: "🧘 You center yourself. Ready to pitch." },
@@ -650,6 +680,7 @@ The greeting should be the NPC's next line continuing the conversation.`;
       garryRejected: false,
       demoDayDone: false,
       actionsThisStage: 0,
+      payingUsers: 0,
       activeCutscene: null,
       isLoading: false,
       actionFeedback: null,
