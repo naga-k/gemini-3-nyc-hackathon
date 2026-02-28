@@ -79,8 +79,11 @@ export default function SceneView() {
         )}
       </div>
 
-      {/* Chat messages — two columns hugging edges, center clear for character */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-3 pt-2 pb-2">
+      {/* Spacer — keeps top 60% clear for the portrait */}
+      <div className="relative z-10 flex-[6] shrink-0 pointer-events-none" />
+
+      {/* Chat messages — bottom 40%, scrollable */}
+      <div className="relative z-10 flex-[4] overflow-y-auto px-3 pt-2 pb-2">
         <div className="space-y-3 max-w-full">
           {/* Generating state */}
           {sceneStep === "generating" && sceneMessages.length === 0 && (
