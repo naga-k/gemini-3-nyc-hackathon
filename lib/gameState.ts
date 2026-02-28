@@ -93,7 +93,7 @@ interface GameState {
   actionsThisStage: number;
 
   // UI state
-  activeCutscene: SpecialEvent | "zuck_layoff" | "pick_startup" | null;
+  activeCutscene: SpecialEvent | "zuck_layoff" | "layoff_scene" | "building_scene" | "pick_startup" | null;
   isLoading: boolean;
   actionFeedback: string | null;
 
@@ -599,8 +599,15 @@ The greeting should be the NPC's next line continuing the conversation.`;
   dismissCutscene: () => {
     const state = get();
     if (state.activeCutscene === "zuck_layoff") {
-      set({ activeCutscene: null, stage: "garage" });
-      get().addKeyEvent("Laid off from Meta. Starting a company.");
+      set({ activeCutscene: "layoff_scene" });
+      return;
+    }
+    if (state.activeCutscene === "layoff_scene") {
+      set({ activeCutscene: "building_scene" });
+      return;
+    }
+    if (state.activeCutscene === "building_scene") {
+      set({ activeCutscene: "pick_startup" });
       return;
     }
     set({ activeCutscene: null });

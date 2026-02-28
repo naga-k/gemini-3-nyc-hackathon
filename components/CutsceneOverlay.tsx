@@ -1,6 +1,137 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useGameStore } from "@/lib/gameState";
+
+// ─── Google Calendar Invite ──────────────────────────────
+
+function CalendarInvite({ onJoin }: { onJoin: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex items-center justify-center p-4">
+      <div className="max-w-sm w-full space-y-4">
+      <p className="text-zinc-400 text-sm text-center italic">
+        Hmm, last-minute meeting with a manager... what could it be?
+      </p>
+
+      {/* Notification card */}
+      <div className="bg-white rounded-2xl w-full shadow-2xl overflow-hidden">
+        {/* Blue header bar */}
+        <div className="bg-[#1a73e8] px-5 py-3 flex items-center gap-3">
+          <svg viewBox="0 0 24 24" className="w-6 h-6 text-white fill-current">
+            <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z" />
+          </svg>
+          <span className="text-white font-medium text-sm">Google Calendar</span>
+        </div>
+
+        {/* Event details */}
+        <div className="p-5 space-y-4">
+          <div>
+            <h2 className="text-gray-900 font-semibold text-lg leading-tight">
+              15-min 1:1 with Manager
+            </h2>
+            <p className="text-gray-500 text-sm mt-1">Today, 3:00 PM – 3:15 PM</p>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex items-start gap-3">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 fill-current mt-0.5 shrink-0">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
+              </svg>
+              <span className="text-gray-700">Conf Room 4B</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 fill-current mt-0.5 shrink-0">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
+              </svg>
+              <span className="text-gray-700">your-manager@meta.com</span>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-gray-400 text-xs italic">No agenda provided</p>
+          </div>
+        </div>
+
+        {/* Action */}
+        <div className="px-5 pb-5">
+          <button
+            onClick={onJoin}
+            className="w-full bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
+          >
+            Join
+          </button>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Layoff Scene with lip-synced portrait ───────────────
+
+function LayoffScene({ onContinue }: { onContinue: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoEnded, setVideoEnded] = useState(false);
+
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center">
+      {/* Video player */}
+      <div className="w-full max-w-3xl">
+        <video
+          ref={videoRef}
+          src="/assets/scene-layoff.mp4"
+          autoPlay
+          className="w-full rounded-lg"
+          onEnded={() => setVideoEnded(true)}
+        />
+      </div>
+
+      {/* Button appears after video ends */}
+      <div className="w-full max-w-3xl px-6 py-6 text-center">
+        {videoEnded && (
+          <button
+            onClick={onContinue}
+            className="bg-orange-600 hover:bg-orange-500 px-6 py-3 rounded-lg font-medium transition-colors animate-fade-in"
+          >
+            What now? &rarr;
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Building Scene (post-layoff reflection) ────────────
+
+function BuildingScene({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center">
+      <div className="w-full max-w-3xl">
+        <img
+          src="/assets/scene-building.png"
+          alt="Late night at the apartment"
+          className="w-full rounded-lg"
+        />
+      </div>
+
+      <div className="w-full max-w-3xl px-6 py-6 text-center space-y-3">
+        <p className="text-zinc-400 text-sm uppercase tracking-widest">That evening</p>
+        <p className="text-zinc-200 text-lg leading-relaxed">
+          $12,000 severance. A laptop. And zero plan.
+        </p>
+        <p className="text-zinc-400 text-sm leading-relaxed">
+          You stare at the screen. The city hums outside. Time to build something.
+        </p>
+        <button
+          onClick={onContinue}
+          className="mt-4 bg-orange-600 hover:bg-orange-500 px-6 py-3 rounded-lg font-medium transition-colors"
+        >
+          What should I build? &rarr;
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function formatMoney(amount: number): string {
   if (amount >= 1_000_000_000) return `$${(amount / 1_000_000_000).toFixed(1)}B`;
@@ -38,10 +169,24 @@ export default function CutsceneOverlay() {
 
   if (!activeCutscene) return null;
 
+  // ─── Google Calendar Invite ────────────────────────────
+  if (activeCutscene === "zuck_layoff") {
+    return <CalendarInvite onJoin={dismissCutscene} />;
+  }
+
+  // ─── Layoff Scene (Scene_1.png) ────────────────────────
+  if (activeCutscene === "layoff_scene") {
+    return <LayoffScene onContinue={dismissCutscene} />;
+  }
+
+  // ─── Building Scene (reflection) ────────────────────────
+  if (activeCutscene === "building_scene") {
+    return <BuildingScene onContinue={dismissCutscene} />;
+  }
+
   // ─── Startup Picker (after layoff) ─────────────────────
   if (activeCutscene === "pick_startup") {
     const handlePick = (option: (typeof STARTUP_OPTIONS)[0]) => {
-      // Set startup info and advance to garage
       useGameStore.setState({
         startupName: option.name,
         startupIdea: option.idea,
@@ -90,17 +235,6 @@ export default function CutsceneOverlay() {
     string,
     { title: string; body: string; emoji: string; color: string; buttonText: string; onButton: () => void }
   > = {
-    zuck_layoff: {
-      title: "You've Been Laid Off",
-      body: `Mark Zuckerberg appears on your screen.\n\n"We're restructuring teams. Your role is being eliminated."\n\n"You're talented. You'll build something."\n\nYou stare at your $12,000 severance. Time to start something.`,
-      emoji: "📱",
-      color: "border-blue-500/50",
-      buttonText: "What now? →",
-      onButton: () => {
-        // Transition to startup picker instead of directly to garage
-        useGameStore.setState({ activeCutscene: "pick_startup" as never });
-      },
-    },
     yc_accepted: {
       title: "YOU'RE IN!",
       body: `Welcome to Y Combinator.\n\nGarry Tan accepted ${startupName} into the batch.\n\n+$125,000 funding. Energy restored.\n\nTime to build.`,

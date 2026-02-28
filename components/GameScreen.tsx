@@ -30,38 +30,45 @@ export default function GameScreen() {
     );
   }
 
+  const activeCutscene = useGameStore((s) => s.activeCutscene);
+
   return (
     <div className="h-screen flex flex-col">
       <CutsceneOverlay />
-      <StageHeader />
-      <MetricsBar />
 
-      {/* Character portrait with lip-synced voice */}
-      <CharacterPortrait />
+      {!activeCutscene && (
+        <>
+          <StageHeader />
+          <MetricsBar />
 
-      {/* Stage Setting */}
-      {!activeScene && (
-        <div className="px-4 py-2 bg-zinc-900/50 border-b border-zinc-800">
-          <p className="text-xs text-zinc-500">
-            📍 {stageConfig.setting} —{" "}
-            <span className="text-zinc-400">{stageConfig.goal}</span>
-          </p>
-        </div>
-      )}
+          {/* Character portrait with lip-synced voice */}
+          <CharacterPortrait />
 
-      {/* Main Content: Scene or Hub */}
-      {activeScene ? (
-        <SceneView />
-      ) : (
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-zinc-600">
-              <p className="text-lg">Choose an action</p>
-              <p className="text-sm mt-1">Each one costs energy 🔥</p>
+          {/* Stage Setting */}
+          {!activeScene && (
+            <div className="px-4 py-2 bg-zinc-900/50 border-b border-zinc-800">
+              <p className="text-xs text-zinc-500">
+                📍 {stageConfig.setting} —{" "}
+                <span className="text-zinc-400">{stageConfig.goal}</span>
+              </p>
             </div>
-          </div>
-          <ActionPanel />
-        </div>
+          )}
+
+          {/* Main Content: Scene or Hub */}
+          {activeScene ? (
+            <SceneView />
+          ) : (
+            <div className="flex-1 flex flex-col">
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-zinc-600">
+                  <p className="text-lg">Choose an action</p>
+                  <p className="text-sm mt-1">Each one costs energy 🔥</p>
+                </div>
+              </div>
+              <ActionPanel />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
