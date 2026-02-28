@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getNpcPrompt } from "@/lib/npcs";
-import { buildReactionPrompt, callGemini, parseNpcResponse } from "@/lib/gemini";
+import { buildSceneGenerationPrompt, callGemini, parseGeneratedScene } from "@/lib/gemini";
 import type { NpcId, SceneOutcome } from "@/lib/gameState";
 
 export async function POST(request: Request) {
@@ -17,7 +17,6 @@ export async function POST(request: Request) {
       npcId,
       sceneContext,
       geminiInstructions,
-      playerChoice,
       gameState,
       sceneHistory,
       keyEvents,
@@ -25,8 +24,6 @@ export async function POST(request: Request) {
       npcId: NpcId;
       sceneContext: string;
       geminiInstructions: string;
-      playerChoice: string;
-      playerChoiceLabel: string;
       gameState: {
         stage: string;
         energy: number;
@@ -49,30 +46,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const prompt = buildReactionPrompt(
+    const prompt = buildSceneGenerationPrompt(
       systemPrompt,
       sceneContext,
-      geminiInstructions || "",
+      geminiInstructions,
       gameState,
       sceneHistory,
       keyEvents,
-      npcId,
-      playerChoice
+      npcId
     );
 
     const raw = await callGemini(prompt);
-    const parsed = parseNpcResponse(raw);
+    const parsed = parseGeneratedScene(raw);
 
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error("Chat API error:", error);
+    console.error("Scene generation API error:", error);
     return NextResponse.json(
       {
-        dialogue: "Sorry, I got distracted. What were you saying?",
-        inner_thoughts: "",
-        metric_changes: { hype: 0, runway: 0, energy: 0 },
-        stage_advance: false,
-        special_event: null,
+        greeting: "So, tell me what you've been working on.",
+        choices: [
+          { label: "Pitch confidently", subtext: "Lead with vision", context: "Player pitched with confidence" },
+          { label: "Show the data", subtext: "Numbers first", context: "Player led with metrics" },
+          { label: "Ask for feedback", subtext: "Stay humble", context: "Player asked for honest feedback" },
+        ],
       },
       { status: 200 }
     );

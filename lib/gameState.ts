@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { getTemplate, isDemoDayTemplate } from "./scenes";
+import type { DemoDayTemplate, SceneTemplate, GeneratedChoice, DemoDayPartTemplate } from "./scenes";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -7,15 +9,6 @@ export type Stage = "layoff" | "garage" | "yc" | "demo-day" | "post-demo" | "win
 export const STAGE_ORDER: Stage[] = ["layoff", "garage", "yc", "demo-day", "post-demo", "win"];
 
 export type NpcId = "garry" | "user" | "batchmate" | "thiel" | "a16z" | "elon";
-
-export interface ChatMessage {
-  npcId: NpcId;
-  role: "user" | "assistant";
-  content: string;
-  innerThoughts?: string;
-  stage: Stage;
-  timestamp: number;
-}
 
 export type SpecialEvent =
   | "yc_accepted"
@@ -41,29 +34,26 @@ export interface NpcResponse {
   };
   stage_advance: boolean;
   special_event: SpecialEvent;
-}
-
-export interface DemoDayReaction {
-  npc: string;
-  dialogue: string;
-  inner_thoughts: string;
-}
-
-export interface DemoDayResponse {
-  reactions: DemoDayReaction[];
-  metric_changes: {
-    hype?: number;
-    runway?: number;
-    energy?: number;
-  };
-  stage_advance: boolean;
-  special_event: SpecialEvent;
+  scene_complete: boolean;
 }
 
 export interface Metrics {
   energy: number;
   runway: number;
   hype: number;
+}
+
+export interface SceneOutcome {
+  sceneId: string;
+  partId?: string;
+  npcId: NpcId;
+  npcName: string;
+  playerChoiceId: string;
+  playerChoiceLabel: string;
+  npcReaction: string;
+  npcInnerThoughts: string;
+  stage: Stage;
+  timestamp: number;
 }
 
 // ─── State ───────────────────────────────────────────────
@@ -79,30 +69,46 @@ interface GameState {
   metrics: Metrics;
   turn: number;
 
-  // Conversation
-  chatHistory: ChatMessage[];
+  // Scene state
+  sceneHistory: SceneOutcome[];
   keyEvents: string[];
-  currentNpc: NpcId | null;
+  activeScene: string | null;
+  sceneStep: "generating" | "greeting" | "loading" | "reaction";
+  demoDayPartIndex: number;
+  lastNpcReaction: NpcResponse | null;
+  lastChoiceId: string | null;
+
+  // Generated scene content (from Gemini call #1)
+  generatedGreeting: string | null;
+  generatedChoices: GeneratedChoice[] | null;
+  sceneTurnCount: number;
+  sceneComplete: boolean;
+
+  // Conversation log for current scene (for display)
+  sceneMessages: { role: "npc" | "player"; text: string; innerThoughts?: string }[];
+
+  // Progression flags
+  garryRejected: boolean;
+  demoDayDone: boolean;
+  actionsThisStage: number;
 
   // UI state
-  activeCutscene: SpecialEvent | "zuck_layoff" | null;
+  activeCutscene: SpecialEvent | "zuck_layoff" | "pick_startup" | null;
   isLoading: boolean;
-  demoDayReactions: DemoDayReaction[] | null;
   actionFeedback: string | null;
 
   // Actions
   startGame: (name: string, idea: string) => void;
-  setCurrentNpc: (npc: NpcId | null) => void;
-  sendMessage: (message: string) => Promise<void>;
-  sendDemoDayPitch: (pitch: string) => Promise<void>;
+  playScene: (sceneId: string) => Promise<void>;
+  makeChoice: (choiceIdx: number) => Promise<void>;
+  continueScene: () => Promise<void>;
+  dismissScene: () => void;
   executeAction: (actionId: string) => void;
   clearActionFeedback: () => void;
   dismissCutscene: () => void;
   advanceStage: (newStage: Stage) => void;
   addKeyEvent: (event: string) => void;
   resetGame: () => void;
-
-  // Derived
   getValuation: () => number;
 }
 
@@ -118,10 +124,7 @@ function clampMetricChange(field: "hype" | "runway" | "energy", value: number): 
   return Math.max(min, Math.min(max, value));
 }
 
-function applyMetricChanges(
-  current: Metrics,
-  changes: NpcResponse["metric_changes"]
-): Metrics {
+function applyMetricChanges(current: Metrics, changes: NpcResponse["metric_changes"]): Metrics {
   return {
     energy: Math.max(0, Math.min(5, current.energy + clampMetricChange("energy", changes.energy ?? 0))),
     runway: Math.max(0, current.runway + clampMetricChange("runway", changes.runway ?? 0)),
@@ -161,6 +164,50 @@ function getNextStage(current: Stage): Stage {
   return current;
 }
 
+// Resolve the current template part (handles both regular and demo day)
+function resolveCurrentTemplatePart(sceneId: string, demoDayPartIndex: number) {
+  const template = getTemplate(sceneId);
+  if (!template) return null;
+
+  if (isDemoDayTemplate(template)) {
+    const part = (template as DemoDayTemplate).parts[demoDayPartIndex];
+    return {
+      npc: part.npc,
+      sceneContext: part.sceneContext,
+      geminiInstructions: part.geminiInstructions,
+      partId: part.id,
+      isDemoDay: true,
+      totalParts: (template as DemoDayTemplate).parts.length,
+      location: template.location,
+    };
+  }
+
+  const t = template as SceneTemplate;
+  return {
+    npc: t.npc,
+    sceneContext: t.sceneContext,
+    geminiInstructions: t.geminiInstructions,
+    partId: undefined,
+    isDemoDay: false,
+    totalParts: 1,
+    location: t.location,
+  };
+}
+
+// Build common game state payload
+function buildGameStatePayload(state: GameState) {
+  return {
+    stage: state.stage,
+    energy: state.metrics.energy,
+    runway: state.metrics.runway,
+    hype: state.metrics.hype,
+    valuation: state.metrics.hype * state.metrics.runway,
+    startupName: state.startupName,
+    startupIdea: state.startupIdea,
+    turn: state.turn,
+  };
+}
+
 // ─── Store ───────────────────────────────────────────────
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -170,12 +217,23 @@ export const useGameStore = create<GameState>((set, get) => ({
   stage: "layoff",
   metrics: { energy: 5, runway: 12000, hype: 0 },
   turn: 0,
-  chatHistory: [],
+  sceneHistory: [],
   keyEvents: [],
-  currentNpc: null,
+  activeScene: null,
+  sceneStep: "generating",
+  demoDayPartIndex: 0,
+  lastNpcReaction: null,
+  lastChoiceId: null,
+  generatedGreeting: null,
+  generatedChoices: null,
+  sceneTurnCount: 0,
+  sceneComplete: false,
+  sceneMessages: [],
+  garryRejected: false,
+  demoDayDone: false,
+  actionsThisStage: 0,
   activeCutscene: null,
   isLoading: false,
-  demoDayReactions: null,
   actionFeedback: null,
 
   startGame: (name, idea) => {
@@ -187,188 +245,331 @@ export const useGameStore = create<GameState>((set, get) => ({
       activeCutscene: "zuck_layoff",
       metrics: { energy: 5, runway: 12000, hype: 0 },
       turn: 0,
-      chatHistory: [],
+      sceneHistory: [],
       keyEvents: [],
-      currentNpc: null,
+      activeScene: null,
+      sceneStep: "generating",
+      demoDayPartIndex: 0,
+      lastNpcReaction: null,
+      lastChoiceId: null,
+      generatedGreeting: null,
+      generatedChoices: null,
+      sceneTurnCount: 0,
+      sceneComplete: false,
+      sceneMessages: [],
+      garryRejected: false,
+      demoDayDone: false,
+      actionsThisStage: 0,
     });
   },
 
-  setCurrentNpc: (npc) => set({ currentNpc: npc }),
-
-  sendMessage: async (message: string) => {
+  // Gemini Call #1: Generate the scene (greeting + choices)
+  playScene: async (sceneId: string) => {
     const state = get();
-    if (!state.currentNpc || state.isLoading) return;
 
-    const userMsg: ChatMessage = {
-      npcId: state.currentNpc,
-      role: "user",
-      content: message,
-      stage: state.stage,
-      timestamp: Date.now(),
-    };
-
-    set((s) => ({
-      chatHistory: [...s.chatHistory, userMsg],
+    set({
+      activeScene: sceneId,
+      sceneStep: "generating",
+      demoDayPartIndex: 0,
+      lastNpcReaction: null,
+      lastChoiceId: null,
+      generatedGreeting: null,
+      generatedChoices: null,
+      sceneTurnCount: 0,
+      sceneComplete: false,
+      sceneMessages: [],
       isLoading: true,
-    }));
+    });
+
+    const part = resolveCurrentTemplatePart(sceneId, 0);
+    if (!part) {
+      set({ isLoading: false, activeScene: null });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/scene", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          npcId: part.npc.id,
+          sceneContext: part.sceneContext,
+          geminiInstructions: part.geminiInstructions,
+          gameState: buildGameStatePayload(state),
+          sceneHistory: state.sceneHistory,
+          keyEvents: state.keyEvents,
+        }),
+      });
+
+      const data = await res.json();
+
+      set({
+        generatedGreeting: data.greeting,
+        generatedChoices: data.choices,
+        sceneStep: "greeting",
+        isLoading: false,
+      });
+    } catch {
+      // Fallback scene
+      set({
+        generatedGreeting: "So, tell me what you've got.",
+        generatedChoices: [
+          { label: "Pitch confidently", subtext: "Lead with vision", context: "Player pitched with confidence" },
+          { label: "Show the data", subtext: "Numbers first", context: "Player led with metrics" },
+          { label: "Ask for advice", subtext: "Stay humble", context: "Player asked for guidance" },
+        ],
+        sceneStep: "greeting",
+        isLoading: false,
+      });
+    }
+  },
+
+  // Gemini Call #2: React to the player's choice
+  makeChoice: async (choiceIdx: number) => {
+    const state = get();
+    if (!state.activeScene || state.isLoading || !state.generatedChoices) return;
+
+    const choice = state.generatedChoices[choiceIdx];
+    if (!choice) return;
+
+    const part = resolveCurrentTemplatePart(state.activeScene, state.demoDayPartIndex);
+    if (!part) return;
+
+    set({ isLoading: true, sceneStep: "loading", lastChoiceId: String(choiceIdx) });
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          npcId: state.currentNpc,
-          playerMessage: message,
-          gameState: {
-            stage: state.stage,
-            stageName: state.stage,
-            energy: state.metrics.energy,
-            runway: state.metrics.runway,
-            hype: state.metrics.hype,
-            valuation: state.metrics.hype * state.metrics.runway,
-            startupName: state.startupName,
-            startupIdea: state.startupIdea,
-            turn: state.turn,
-          },
-          chatHistory: [...state.chatHistory, userMsg],
+          npcId: part.npc.id,
+          sceneContext: part.sceneContext,
+          geminiInstructions: part.geminiInstructions,
+          playerChoice: choice.context,
+          playerChoiceLabel: choice.label,
+          gameState: buildGameStatePayload(state),
+          sceneHistory: state.sceneHistory,
           keyEvents: state.keyEvents,
         }),
       });
 
       const data: NpcResponse = await res.json();
 
-      const npcMsg: ChatMessage = {
-        npcId: state.currentNpc,
-        role: "assistant",
-        content: data.dialogue,
-        innerThoughts: data.inner_thoughts,
+      const outcome: SceneOutcome = {
+        sceneId: state.activeScene,
+        partId: part.partId,
+        npcId: part.npc.id as NpcId,
+        npcName: part.npc.name,
+        playerChoiceId: String(choiceIdx),
+        playerChoiceLabel: choice.label,
+        npcReaction: data.dialogue,
+        npcInnerThoughts: data.inner_thoughts,
         stage: state.stage,
         timestamp: Date.now(),
       };
 
       let newMetrics = applyMetricChanges(get().metrics, data.metric_changes);
-
-      // Apply special event rewards
       if (data.special_event) {
         newMetrics = applySpecialEventRewards(newMetrics, data.special_event);
       }
 
       const newKeyEvents = [...get().keyEvents];
+      const shortReaction = data.dialogue.length > 80 ? data.dialogue.slice(0, 80) + "..." : data.dialogue;
+      newKeyEvents.push(
+        `[${state.stage}] ${state.activeScene}: Player chose "${choice.label}" → ${part.npc.name}: "${shortReaction}"`
+      );
       if (data.special_event) {
-        newKeyEvents.push(
-          `${data.special_event} triggered after talking to ${state.currentNpc} (turn ${state.turn + 1})`
-        );
+        newKeyEvents.push(`Event: ${data.special_event} (turn ${state.turn + 1})`);
       }
 
+      let garryRejected = state.garryRejected;
+      if (data.special_event === "yc_rejected") garryRejected = true;
+
+      const newTurnCount = state.sceneTurnCount + 1;
+      const isComplete = data.scene_complete || newTurnCount >= 7 || !!data.special_event;
+
       set((s) => ({
-        chatHistory: [...s.chatHistory, npcMsg],
+        sceneHistory: [...s.sceneHistory, outcome],
+        lastNpcReaction: data,
         metrics: newMetrics,
         turn: s.turn + 1,
         isLoading: false,
         keyEvents: newKeyEvents,
+        garryRejected,
+        actionsThisStage: s.actionsThisStage + 1,
+        sceneStep: "reaction",
+        sceneTurnCount: newTurnCount,
+        sceneComplete: isComplete,
+        sceneMessages: [
+          ...s.sceneMessages,
+          { role: "player" as const, text: choice.label },
+          { role: "npc" as const, text: data.dialogue, innerThoughts: data.inner_thoughts },
+        ],
       }));
 
-      // Stage advance
       if (data.stage_advance) {
         get().advanceStage(getNextStage(get().stage));
       }
 
-      // Cutscenes for special events
       if (data.special_event) {
         set({ activeCutscene: data.special_event });
       }
 
-      // Check game over
-      if (newMetrics.runway <= 0) {
-        set({ activeCutscene: "game_over" });
-      }
-
-      // Check win
-      if (newMetrics.hype * newMetrics.runway >= 1_000_000_000) {
-        set({ activeCutscene: "unicorn" });
-      }
+      if (newMetrics.runway <= 0) set({ activeCutscene: "game_over" });
+      if (newMetrics.hype * newMetrics.runway >= 1_000_000_000) set({ activeCutscene: "unicorn" });
     } catch {
-      set({ isLoading: false });
+      set({ isLoading: false, sceneStep: "greeting" });
     }
   },
 
-  sendDemoDayPitch: async (pitch: string) => {
+  // Generate follow-up choices for multi-turn scene
+  continueScene: async () => {
     const state = get();
-    if (state.isLoading) return;
+    if (!state.activeScene || state.isLoading || state.sceneComplete) return;
 
-    set({ isLoading: true });
+    const part = resolveCurrentTemplatePart(state.activeScene, state.demoDayPartIndex);
+    if (!part) return;
+
+    set({ isLoading: true, sceneStep: "generating" });
+
+    // Build a follow-up instruction that includes the conversation so far
+    const convoSoFar = state.sceneMessages
+      .map((m) => (m.role === "player" ? `Player: "${m.text}"` : `${part.npc.name}: "${m.text}"`))
+      .join("\n");
+
+    const followUpInstructions = `${part.geminiInstructions}
+
+CONVERSATION SO FAR IN THIS SCENE (turn ${state.sceneTurnCount} of max 7):
+${convoSoFar}
+
+Generate a FOLLOW-UP response and new choices. Continue the conversation naturally. Do NOT repeat what was already said.
+If the conversation has reached a natural conclusion (2-7 turns), you may generate a shorter list of choices or wrap-up choices.
+The greeting should be the NPC's next line continuing the conversation.`;
 
     try {
-      const res = await fetch("/api/demo-day", {
+      const res = await fetch("/api/scene", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          playerMessage: pitch,
-          gameState: {
-            stage: state.stage,
-            stageName: state.stage,
-            energy: state.metrics.energy,
-            runway: state.metrics.runway,
-            hype: state.metrics.hype,
-            valuation: state.metrics.hype * state.metrics.runway,
-            startupName: state.startupName,
-            startupIdea: state.startupIdea,
-            turn: state.turn,
-          },
-          chatHistory: state.chatHistory,
-          keyEvents: state.keyEvents,
+          npcId: part.npc.id,
+          sceneContext: part.sceneContext,
+          geminiInstructions: followUpInstructions,
+          gameState: buildGameStatePayload(get()),
+          sceneHistory: get().sceneHistory,
+          keyEvents: get().keyEvents,
         }),
       });
 
-      const data: DemoDayResponse = await res.json();
-
-      let newMetrics = applyMetricChanges(get().metrics, data.metric_changes);
-      if (data.special_event) {
-        newMetrics = applySpecialEventRewards(newMetrics, data.special_event);
-      }
-
-      const newKeyEvents = [...get().keyEvents];
-      if (data.special_event) {
-        newKeyEvents.push(
-          `Demo Day result: ${data.special_event} (turn ${state.turn + 1})`
-        );
-      }
+      const data = await res.json();
 
       set({
-        demoDayReactions: data.reactions,
-        metrics: newMetrics,
-        turn: state.turn + 1,
+        generatedGreeting: data.greeting,
+        generatedChoices: data.choices,
+        sceneStep: "greeting",
         isLoading: false,
-        keyEvents: newKeyEvents,
+        lastNpcReaction: null,
+        lastChoiceId: null,
       });
-
-      if (data.stage_advance) {
-        get().advanceStage(getNextStage(get().stage));
-      }
-
-      if (data.special_event) {
-        set({ activeCutscene: data.special_event });
-      }
     } catch {
-      set({ isLoading: false });
+      set({
+        sceneComplete: true,
+        sceneStep: "reaction",
+        isLoading: false,
+      });
     }
+  },
+
+  dismissScene: () => {
+    const state = get();
+
+    // For demo_day multi-part: generate the next part
+    if (state.activeScene === "demo_day") {
+      const template = getTemplate("demo_day");
+      if (template && isDemoDayTemplate(template)) {
+        const nextIdx = state.demoDayPartIndex + 1;
+        if (nextIdx < template.parts.length) {
+          // Generate next part's scene
+          const nextPart = template.parts[nextIdx] as DemoDayPartTemplate;
+
+          set({
+            sceneStep: "generating",
+            demoDayPartIndex: nextIdx,
+            lastNpcReaction: null,
+            lastChoiceId: null,
+            generatedGreeting: null,
+            generatedChoices: null,
+            isLoading: true,
+          });
+
+          // Fire off scene generation for next part
+          fetch("/api/scene", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              npcId: nextPart.npc.id,
+              sceneContext: nextPart.sceneContext,
+              geminiInstructions: nextPart.geminiInstructions,
+              gameState: buildGameStatePayload(get()),
+              sceneHistory: get().sceneHistory,
+              keyEvents: get().keyEvents,
+            }),
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              set({
+                generatedGreeting: data.greeting,
+                generatedChoices: data.choices,
+                sceneStep: "greeting",
+                isLoading: false,
+              });
+            })
+            .catch(() => {
+              set({
+                generatedGreeting: "What do you think?",
+                generatedChoices: [
+                  { label: "Go bold", subtext: "Swing big", context: "Player chose a bold approach" },
+                  { label: "Play it safe", subtext: "Measured response", context: "Player chose a safe approach" },
+                  { label: "Surprise them", subtext: "Unexpected angle", context: "Player took an unexpected angle" },
+                ],
+                sceneStep: "greeting",
+                isLoading: false,
+              });
+            });
+
+          return;
+        }
+      }
+    }
+
+    // Return to hub
+    set({
+      activeScene: null,
+      sceneStep: "generating",
+      lastNpcReaction: null,
+      lastChoiceId: null,
+      generatedGreeting: null,
+      generatedChoices: null,
+      sceneTurnCount: 0,
+      sceneComplete: false,
+      sceneMessages: [],
+      demoDayPartIndex: 0,
+    });
   },
 
   executeAction: (actionId: string) => {
     const state = get();
-    // Import action defs inline to avoid circular — actions are simple objects
     const ACTION_EFFECTS: Record<string, { energy: number; runway: number; hype: number; feedback: string }> = {
-      code_mvp: { energy: -1, runway: -500, hype: 2, feedback: "🔨 Shipped some code. Hype +2." },
+      code_mvp: { energy: -1, runway: 800, hype: 2, feedback: "🔨 Shipped a feature. First paying user! +$800, Hype +2." },
       eat_ramen: { energy: 1, runway: -200, hype: 0, feedback: "🍜 Cheap fuel. Energy restored. (-$200)" },
-      iterate_product: { energy: -1, runway: -800, hype: 3, feedback: "🔨 Product improved. Hype +3." },
-      practice_pitch: { energy: -1, runway: -300, hype: 2, feedback: "🎤 Getting sharper. Hype +2." },
-      check_inbox: { energy: 0, runway: 0, hype: 1, feedback: "📱 47 unread from VCs. You feel validated. Hype +1." },
+      iterate_product: { energy: -1, runway: 1500, hype: 3, feedback: "🔨 Shipped improvements. Users upgraded! +$1,500, Hype +3." },
+      practice_pitch: { energy: -1, runway: -300, hype: 2, feedback: "🎤 Getting sharper. Hype +2. (-$300)" },
+      check_inbox: { energy: 0, runway: 0, hype: 1, feedback: "📱 52 unread from VCs. You feel validated. Hype +1." },
+      deep_breath: { energy: 0, runway: 0, hype: 0, feedback: "🧘 You center yourself. Ready to pitch." },
     };
 
     const effect = ACTION_EFFECTS[actionId];
     if (!effect) return;
-
-    if (state.metrics.energy + effect.energy < 0) return; // not enough energy
+    if (state.metrics.energy + effect.energy < 0) return;
 
     const newMetrics = {
       energy: Math.max(0, Math.min(5, state.metrics.energy + effect.energy)),
@@ -385,9 +586,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       turn: state.turn + 1,
       keyEvents: newKeyEvents,
       actionFeedback: effect.feedback,
+      actionsThisStage: state.actionsThisStage + 1,
     });
 
-    // Game over check
     if (newMetrics.runway <= 0) {
       set({ activeCutscene: "game_over" });
     }
@@ -397,13 +598,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   dismissCutscene: () => {
     const state = get();
-    // If it was the layoff cutscene, advance to garage
     if (state.activeCutscene === "zuck_layoff") {
       set({ activeCutscene: null, stage: "garage" });
       get().addKeyEvent("Laid off from Meta. Starting a company.");
       return;
     }
-    // If it was a stage-advancing event, stage was already advanced
     set({ activeCutscene: null });
   },
 
@@ -411,8 +610,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((s) => ({
       stage: newStage,
       metrics: { ...s.metrics, energy: 5 },
-      currentNpc: null,
-      demoDayReactions: null,
+      activeScene: null,
+      actionsThisStage: 0,
     }));
     get().addKeyEvent(`Advanced to ${newStage} stage (turn ${get().turn})`);
   },
@@ -429,12 +628,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       stage: "layoff",
       metrics: { energy: 5, runway: 12000, hype: 0 },
       turn: 0,
-      chatHistory: [],
+      sceneHistory: [],
       keyEvents: [],
-      currentNpc: null,
+      activeScene: null,
+      sceneStep: "generating",
+      demoDayPartIndex: 0,
+      lastNpcReaction: null,
+      lastChoiceId: null,
+      generatedGreeting: null,
+      generatedChoices: null,
+      sceneTurnCount: 0,
+      sceneComplete: false,
+      sceneMessages: [],
+      garryRejected: false,
+      demoDayDone: false,
+      actionsThisStage: 0,
       activeCutscene: null,
       isLoading: false,
-      demoDayReactions: null,
       actionFeedback: null,
     });
   },
@@ -444,3 +654,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     return hype * runway;
   },
 }));
+
+// Export for SceneView
+export { resolveCurrentTemplatePart };
