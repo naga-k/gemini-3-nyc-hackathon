@@ -171,17 +171,29 @@ export default function CutsceneOverlay() {
 
   // ─── Google Calendar Invite ────────────────────────────
   if (activeCutscene === "zuck_layoff") {
-    return <CalendarInvite onJoin={dismissCutscene} />;
+    return (
+      <div onDoubleClick={dismissCutscene}>
+        <CalendarInvite onJoin={dismissCutscene} />
+      </div>
+    );
   }
 
   // ─── Layoff Scene (Scene_1.png) ────────────────────────
   if (activeCutscene === "layoff_scene") {
-    return <LayoffScene onContinue={dismissCutscene} />;
+    return (
+      <div onDoubleClick={dismissCutscene}>
+        <LayoffScene onContinue={dismissCutscene} />
+      </div>
+    );
   }
 
   // ─── Building Scene (reflection) ────────────────────────
   if (activeCutscene === "building_scene") {
-    return <BuildingScene onContinue={dismissCutscene} />;
+    return (
+      <div onDoubleClick={dismissCutscene}>
+        <BuildingScene onContinue={dismissCutscene} />
+      </div>
+    );
   }
 
   // ─── Startup Picker (after layoff) ─────────────────────
@@ -233,7 +245,16 @@ export default function CutsceneOverlay() {
 
   const scenes: Record<
     string,
-    { title: string; body: string; emoji: string; color: string; buttonText: string; onButton: () => void }
+    {
+      title: string;
+      body: string;
+      emoji: string;
+      imageSrc?: string;
+      imageAlt?: string;
+      color: string;
+      buttonText: string;
+      onButton: () => void;
+    }
   > = {
     yc_accepted: {
       title: "YOU'RE IN!",
@@ -321,6 +342,8 @@ export default function CutsceneOverlay() {
         metrics.hype * metrics.runway
       )}.\n\nYou went from Zero to One.\n\n${turn} turns. ${keyEvents.length} key moments.\n\nFrom a Meta layoff to a unicorn.`,
       emoji: "🦄",
+      imageSrc: "/assets/scene-ipo.png",
+      imageAlt: "IPO victory stage",
       color: "border-amber-400/50",
       buttonText: "Play Again",
       onButton: resetGame,
@@ -335,7 +358,17 @@ export default function CutsceneOverlay() {
       <div
         className={`bg-zinc-950 border ${scene.color} rounded-2xl max-w-md w-full p-8 text-center`}
       >
-        <div className="text-5xl mb-4">{scene.emoji}</div>
+        {scene.imageSrc ? (
+          <div className="mb-5 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+            <img
+              src={scene.imageSrc}
+              alt={scene.imageAlt ?? scene.title}
+              className="w-full aspect-video object-cover"
+            />
+          </div>
+        ) : (
+          <div className="text-5xl mb-4">{scene.emoji}</div>
+        )}
         <h2 className="text-2xl font-bold mb-4">{scene.title}</h2>
         <p className="text-zinc-300 text-sm whitespace-pre-line mb-6 leading-relaxed">
           {scene.body}

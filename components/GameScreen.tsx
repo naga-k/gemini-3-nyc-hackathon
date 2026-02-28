@@ -11,6 +11,7 @@ import { getStageConfig } from "@/lib/stages";
 export default function GameScreen() {
   const stage = useGameStore((s) => s.stage);
   const activeScene = useGameStore((s) => s.activeScene);
+  const activeCutscene = useGameStore((s) => s.activeCutscene);
   const stageConfig = getStageConfig(stage);
   const isWin = stage === "win";
 
@@ -20,7 +21,11 @@ export default function GameScreen() {
         <CutsceneOverlay />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <p className="text-6xl mb-4">🦄</p>
+            <img
+              src="/assets/scene-ipo.png"
+              alt="IPO victory stage"
+              className="w-[min(900px,90vw)] mx-auto rounded-2xl border border-zinc-800 mb-6"
+            />
             <h1 className="text-4xl font-bold mb-2">You Did It.</h1>
             <p className="text-zinc-400">From Zero to One.</p>
           </div>
@@ -28,8 +33,6 @@ export default function GameScreen() {
       </div>
     );
   }
-
-  const activeCutscene = useGameStore((s) => s.activeCutscene);
 
   return (
     <div className="h-screen flex flex-col">
