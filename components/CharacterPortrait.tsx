@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { LipSyncEngine, type MouthState } from "@/lib/lipSync";
 import { useGameStore, resolveCurrentTemplatePart } from "@/lib/gameState";
 import type { NpcId } from "@/lib/gameState";
+import { getCachedVoice } from "@/lib/voiceCache";
 
 // ─── Mouth sprites ──────────────────────────────────────
 const MOUTH_SPRITES: Record<Exclude<MouthState, "closed">, string> = {
@@ -35,23 +36,40 @@ const SCENE_VISUALS: Record<string, SceneVisualConfig> = {
   },
   user_chat_1: {
     bg: "/assets/scene-talk-user.png",
-    npcMouth: { left: 74.2, top: 42.3, width: 3.5 },
-    playerMouth: { left: 25.9, top: 42.3, width: 4.3, flip: true },
+    npcMouth: { left: 74.4, top: 42.3, width: 5.0 },
+    playerMouth: { left: 26.2, top: 42.3, width: 5.2, flip: true },
   },
   user_chat_2: {
     bg: "/assets/scene-talk-user.png",
-    npcMouth: { left: 74.2, top: 42.3, width: 3.5 },
-    playerMouth: { left: 25.9, top: 42.3, width: 4.3, flip: true },
+    npcMouth: { left: 74.4, top: 42.3, width: 5.0 },
+    playerMouth: { left: 26.2, top: 42.3, width: 5.2, flip: true },
   },
   yc_apply_1: {
     bg: "/assets/scene-yc-interview.png",
-    npcMouth: { left: 30.0, top: 52.0, width: 3.0 },
-    playerMouth: { left: 80.0, top: 50.0, width: 3.0 },
+    npcMouth: { left: 27.3, top: 45.1, width: 3.0 },
+    playerMouth: { left: 76.3, top: 50.2, width: 3.0, flip: true },
   },
   yc_apply_2: {
     bg: "/assets/scene-yc-interview.png",
-    npcMouth: { left: 30.0, top: 52.0, width: 3.0 },
-    playerMouth: { left: 80.0, top: 50.0, width: 3.0 },
+    npcMouth: { left: 27.3, top: 45.1, width: 3.0 },
+    playerMouth: { left: 76.3, top: 50.2, width: 3.0, flip: true },
+  },
+  office_hours: {
+    bg: "/assets/scene-office-hours.png",
+    npcMouth: { left: 72, top: 42, width: 3.5 },
+    playerMouth: { left: 30, top: 42, width: 3.5, flip: true },
+  },
+  _yc: {
+    bg: "/assets/scene-office-hours.png",
+    npcMouth: { left: 72, top: 42, width: 3.5 },
+  },
+  demo_day: {
+    bg: "/assets/scene-demoday.png",
+    npcMouth: { left: 42, top: 42, width: 3.5 },
+  },
+  "_demo-day": {
+    bg: "/assets/scene-demoday.png",
+    npcMouth: { left: 42, top: 42, width: 3.5 },
   },
   _default: {
     bg: "/assets/scene-yc.png",
@@ -131,7 +149,7 @@ function MouthOverlay({
       <img
         src={mouthSrc}
         alt=""
-        className={`absolute ${debugMode ? "cursor-grab ring-2 ring-red-500/50" : "pointer-events-none"} ${isDragging ? "cursor-grabbing" : ""}`}
+        className={`absolute ${debugMode ? "cursor-grab ring-2 ring-red-500/50 z-50" : "pointer-events-none"} ${isDragging ? "cursor-grabbing" : ""}`}
         style={{
           left: `${pos.left}%`,
           top: `${pos.top}%`,
@@ -143,7 +161,7 @@ function MouthOverlay({
       />
       {debugMode && (
         <div
-          className="absolute bg-black/80 rounded px-2 py-1 text-xs text-white z-20 flex items-center gap-1"
+          className="absolute bg-black/80 rounded px-2 py-1 text-xs text-white z-50 flex items-center gap-1"
           style={{ left: `${pos.left}%`, top: `${pos.top + 4}%`, transform: "translateX(-50%)" }}
         >
           <span className="text-zinc-400">{label}</span>
@@ -170,7 +188,8 @@ export default function CharacterPortrait() {
   const npcLipSyncRef = useRef<LipSyncEngine | null>(null);
   const playerLipSyncRef = useRef<LipSyncEngine | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [debugMode, setDebugMode] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
+  const activeSpeechRef = useRef<AbortController | null>(null);
 
   // Track what we've already spoken
   const lastSpokenGreeting = useRef<string | null>(null);
@@ -180,11 +199,14 @@ export default function CharacterPortrait() {
 
   const stage = useGameStore((s) => s.stage);
   const activeScene = useGameStore((s) => s.activeScene);
+  const activeCutscene = useGameStore((s) => s.activeCutscene);
   const sceneStep = useGameStore((s) => s.sceneStep);
   const demoDayPartIndex = useGameStore((s) => s.demoDayPartIndex);
   const generatedGreeting = useGameStore((s) => s.generatedGreeting);
   const lastNpcReaction = useGameStore((s) => s.lastNpcReaction);
   const sceneMessages = useGameStore((s) => s.sceneMessages);
+
+  const effectiveDebugMode = process.env.NODE_ENV === "development" ? debugMode : false;
 
   const config = getVisualConfig(stage, activeScene);
 
@@ -207,33 +229,56 @@ export default function CharacterPortrait() {
     dialogue: string,
     voiceId: NpcId,
     engine: LipSyncEngine | null,
-    setActive: (v: boolean) => void
+    setActive: (v: boolean) => void,
+    signal: AbortSignal
   ) => {
     if (!engine) return;
     setActive(true);
     try {
+      // Check prefetch cache first
+      const cached = getCachedVoice(dialogue, voiceId);
+      if (cached) {
+        const audio = await cached;
+        if (signal.aborted) return;
+        if (audio) {
+          await engine.playAudio(audio);
+          if (!signal.aborted) setActive(false);
+          return;
+        }
+      }
+      if (signal.aborted) return;
+
+      // Fallback: fetch directly
       const res = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dialogue, npcId: voiceId }),
+        signal,
       });
       if (res.ok) {
         const data = await res.json();
         if (data.audio) await engine.playAudio(data.audio);
       }
-    } catch { /* silent */ }
-    setActive(false);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    }
+    if (!signal.aborted) setActive(false);
   }, []);
 
   const speakNpc = useCallback((dialogue: string) => {
     if (!currentNpcId) return;
+    // Abort any in-flight voice fetch and stop current audio
+    activeSpeechRef.current?.abort();
     npcLipSyncRef.current?.stop();
-    speakDialogue(dialogue, currentNpcId, npcLipSyncRef.current, setIsSpeaking);
+    const controller = new AbortController();
+    activeSpeechRef.current = controller;
+    speakDialogue(dialogue, currentNpcId, npcLipSyncRef.current, setIsSpeaking, controller.signal);
   }, [currentNpcId, speakDialogue]);
 
   const speakPlayer = useCallback((dialogue: string) => {
     playerLipSyncRef.current?.stop();
-    speakDialogue(dialogue, "player", playerLipSyncRef.current, () => {});
+    const controller = new AbortController();
+    speakDialogue(dialogue, "player", playerLipSyncRef.current, () => {}, controller.signal);
   }, [speakDialogue]);
 
   // Speak NPC greeting
@@ -277,18 +322,34 @@ export default function CharacterPortrait() {
 
   // Reset when scene changes
   useEffect(() => {
+    activeSpeechRef.current?.abort();
+    activeSpeechRef.current = null;
     npcLipSyncRef.current?.stop();
     playerLipSyncRef.current?.stop();
     setNpcMouthState("closed");
     setPlayerMouthState("closed");
+    setIsSpeaking(false);
     lastSpokenGreeting.current = null;
     lastSpokenReaction.current = null;
     lastSpokenNpcMsgCount.current = 0;
     lastSpokenPlayerMsgCount.current = 0;
   }, [activeScene]);
 
+  // Stop audio immediately when a cutscene appears (e.g. Stripe purchase banner)
+  useEffect(() => {
+    if (activeCutscene) {
+      activeSpeechRef.current?.abort();
+      activeSpeechRef.current = null;
+      npcLipSyncRef.current?.stop();
+      playerLipSyncRef.current?.stop();
+      setNpcMouthState("closed");
+      setPlayerMouthState("closed");
+      setIsSpeaking(false);
+    }
+  }, [activeCutscene]);
+
   return (
-    <div className="absolute inset-0 z-0">
+    <div className={`absolute inset-0 ${effectiveDebugMode ? "z-50" : "z-0"}`}>
       <div
         data-mouth-container
         className="relative w-full h-full"
@@ -304,7 +365,7 @@ export default function CharacterPortrait() {
         <MouthOverlay
           mouthState={npcMouthState}
           config={config.npcMouth}
-          debugMode={debugMode}
+          debugMode={effectiveDebugMode}
           label="NPC_MOUTH"
         />
 
@@ -313,13 +374,13 @@ export default function CharacterPortrait() {
           <MouthOverlay
             mouthState={playerMouthState}
             config={config.playerMouth}
-            debugMode={debugMode}
+            debugMode={effectiveDebugMode}
             label="PLAYER_MOUTH"
           />
         )}
 
         {/* Debug overlay */}
-        {debugMode && (
+        {effectiveDebugMode && (
           <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-3 py-2 text-xs text-white z-20">
             <button
               onClick={() => setDebugMode(false)}

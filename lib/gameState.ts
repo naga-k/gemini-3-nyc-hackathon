@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { getTemplate, isDemoDayTemplate } from "./scenes";
 import type { DemoDayTemplate, SceneTemplate, GeneratedChoice, DemoDayPartTemplate } from "./scenes";
+import { prefetchVoice, clearVoiceCache } from "./voiceCache";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export type SpecialEvent =
   | "term_sheet"
   | "elon_tweet_positive"
   | "elon_tweet_negative"
+  | "user_purchase"
   | "game_over"
   | "unicorn"
   | null;
@@ -97,6 +99,7 @@ interface GameState {
   activeCutscene: SpecialEvent | "zuck_layoff" | "layoff_scene" | "building_scene" | "pick_startup" | null;
   isLoading: boolean;
   actionFeedback: string | null;
+  _sceneAbortController: AbortController | null;
 
   // Actions
   startGame: (name: string, idea: string) => void;
@@ -111,6 +114,7 @@ interface GameState {
   addKeyEvent: (event: string) => void;
   resetGame: () => void;
   getValuation: () => number;
+  prefetchScene: (sceneId: string) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -152,6 +156,10 @@ function applySpecialEventRewards(metrics: Metrics, event: SpecialEvent): Metric
       break;
     case "elon_tweet_negative":
       m.hype = Math.max(0, m.hype - 15);
+      break;
+    case "user_purchase":
+      m.runway += 1500;
+      m.hype = Math.min(100, m.hype + 3);
       break;
     default:
       break;
@@ -210,6 +218,35 @@ function buildGameStatePayload(state: GameState) {
   };
 }
 
+/** Prefetch voice audio — greeting first (plays immediately), choices after a delay */
+function prefetchSceneVoices(greeting: string, choices: GeneratedChoice[], npcId: string) {
+  prefetchVoice(greeting, npcId);
+  setTimeout(() => {
+    for (const c of choices) {
+      prefetchVoice(c.label, "player");
+    }
+  }, 500);
+}
+
+// ─── Scene Prefetch Cache ────────────────────────────────
+// Prefetches entire scene (Gemini call #1 + voice) while user is on hub screen
+
+interface PrefetchedScene {
+  greeting: string;
+  choices: GeneratedChoice[];
+  npcId: string;
+}
+
+const scenePrefetchCache = new Map<string, Promise<PrefetchedScene | null>>();
+
+function getScenePrefetch(sceneId: string): Promise<PrefetchedScene | null> | null {
+  return scenePrefetchCache.get(sceneId) ?? null;
+}
+
+function clearScenePrefetch() {
+  scenePrefetchCache.clear();
+}
+
 // ─── Store ───────────────────────────────────────────────
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -238,6 +275,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   activeCutscene: null,
   isLoading: false,
   actionFeedback: null,
+  _sceneAbortController: null,
 
   startGame: (name, idea) => {
     set({
@@ -267,13 +305,52 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
+  // Prefetch scene data + voice while user is on hub screen
+  prefetchScene: (sceneId: string) => {
+    if (scenePrefetchCache.has(sceneId)) return;
+
+    const state = get();
+    const part = resolveCurrentTemplatePart(sceneId, 0);
+    if (!part) return;
+
+    const promise = fetch("/api/scene", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        npcId: part.npc.id,
+        sceneContext: part.sceneContext,
+        geminiInstructions: part.geminiInstructions,
+        gameState: buildGameStatePayload(state),
+        sceneHistory: state.sceneHistory,
+        keyEvents: state.keyEvents,
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return null;
+        // Don't prefetch voice here — too many concurrent requests kills rate limits
+        // Voice prefetch happens in playScene when this cache is consumed
+        return { greeting: data.greeting, choices: data.choices, npcId: part.npc.id } as PrefetchedScene;
+      })
+      .catch(() => null);
+
+    scenePrefetchCache.set(sceneId, promise);
+  },
+
   // Gemini Call #1: Generate the scene (greeting + choices)
   playScene: async (sceneId: string) => {
     const state = get();
 
+    // Abort any previous scene fetches
+    state._sceneAbortController?.abort();
+    const sceneController = new AbortController();
+
+    // Check if we already have prefetched scene data
+    const prefetched = getScenePrefetch(sceneId);
+
     set({
       activeScene: sceneId,
-      sceneStep: "generating",
+      sceneStep: prefetched ? "generating" : "generating",
       demoDayPartIndex: 0,
       lastNpcReaction: null,
       lastChoiceId: null,
@@ -283,6 +360,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       sceneComplete: false,
       sceneMessages: [],
       isLoading: true,
+      _sceneAbortController: sceneController,
     });
 
     const part = resolveCurrentTemplatePart(sceneId, 0);
@@ -292,29 +370,55 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     try {
-      const res = await fetch("/api/scene", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          npcId: part.npc.id,
-          sceneContext: part.sceneContext,
-          geminiInstructions: part.geminiInstructions,
-          gameState: buildGameStatePayload(state),
-          sceneHistory: state.sceneHistory,
-          keyEvents: state.keyEvents,
-        }),
-      });
+      let data: { greeting: string; choices: GeneratedChoice[] } | null = null;
 
-      const data = await res.json();
+      // Try prefetch cache first
+      if (prefetched) {
+        const cached = await prefetched;
+        if (cached && !sceneController.signal.aborted) {
+          data = cached;
+          // Now prefetch voice (only for the scene the user actually clicked)
+          prefetchSceneVoices(cached.greeting, cached.choices, part.npc.id);
+        }
+      }
 
-      set({
-        generatedGreeting: data.greeting,
-        generatedChoices: data.choices,
-        sceneStep: "greeting",
-        isLoading: false,
-      });
-    } catch {
-      // Fallback scene
+      // Fall back to fresh fetch if no cache hit
+      if (!data && !sceneController.signal.aborted) {
+        const timeout = setTimeout(() => sceneController.abort(), 20000);
+        const res = await fetch("/api/scene", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            npcId: part.npc.id,
+            sceneContext: part.sceneContext,
+            geminiInstructions: part.geminiInstructions,
+            gameState: buildGameStatePayload(state),
+            sceneHistory: state.sceneHistory,
+            keyEvents: state.keyEvents,
+          }),
+          signal: sceneController.signal,
+        });
+        clearTimeout(timeout);
+        if (sceneController.signal.aborted) return;
+        data = await res.json();
+        // Prefetch voice for fresh fetch path
+        if (data) prefetchSceneVoices(data.greeting, data.choices, part.npc.id);
+      }
+
+      if (sceneController.signal.aborted) return;
+
+      if (data) {
+        set({
+          generatedGreeting: data.greeting,
+          generatedChoices: data.choices,
+          sceneStep: "greeting",
+          isLoading: false,
+        });
+      } else {
+        throw new Error("No scene data");
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       set({
         generatedGreeting: "So, tell me what you've got.",
         generatedChoices: [
@@ -325,6 +429,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         sceneStep: "greeting",
         isLoading: false,
       });
+    } finally {
+      // Clear used prefetch so next visit gets fresh data
+      scenePrefetchCache.delete(sceneId);
     }
   },
 
@@ -341,6 +448,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set({ isLoading: true, sceneStep: "loading", lastChoiceId: String(choiceIdx) });
 
+    const controller = get()._sceneAbortController;
+    const timeout = setTimeout(() => controller?.abort(), 25000);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -355,8 +464,11 @@ export const useGameStore = create<GameState>((set, get) => ({
           sceneHistory: state.sceneHistory,
           keyEvents: state.keyEvents,
         }),
+        signal: controller?.signal,
       });
+      clearTimeout(timeout);
 
+      if (controller?.signal.aborted) return;
       const data: NpcResponse = await res.json();
 
       const outcome: SceneOutcome = {
@@ -386,25 +498,35 @@ export const useGameStore = create<GameState>((set, get) => ({
         newKeyEvents.push(`Event: ${data.special_event} (turn ${state.turn + 1})`);
       }
 
-      // Deterministic YC acceptance: override LLM decision based on paying users
+      const newTurnCount = state.sceneTurnCount + 1;
+
+      // Deterministic YC acceptance: force on turn 1 if has paying users
       const isYcScene = state.activeScene === "yc_apply_1" || state.activeScene === "yc_apply_2";
-      if (isYcScene && data.scene_complete) {
+      if (isYcScene && newTurnCount >= 1) {
         if (state.payingUsers >= 1) {
-          // Force acceptance regardless of what LLM said
           data.special_event = "yc_accepted";
           data.stage_advance = true;
+          data.scene_complete = true;
         } else {
-          // Force rejection — need paying users first
           data.special_event = "yc_rejected";
           data.stage_advance = false;
+          data.scene_complete = true;
         }
+      }
+      const isUserScene = state.activeScene === "user_chat_1" || state.activeScene === "user_chat_2";
+      const isOfficeHours = state.activeScene === "office_hours";
+
+      // Deterministic user purchase: force on turn 1 regardless of LLM
+      if (isUserScene && newTurnCount >= 1) {
+        data.special_event = "user_purchase";
+        data.scene_complete = true;
       }
 
       let garryRejected = state.garryRejected;
       if (data.special_event === "yc_rejected") garryRejected = true;
 
-      const newTurnCount = state.sceneTurnCount + 1;
-      const isComplete = data.scene_complete || newTurnCount >= 7 || !!data.special_event;
+      const maxTurns = (isUserScene || isOfficeHours) ? 2 : 7;
+      const isComplete = data.scene_complete || newTurnCount >= maxTurns || !!data.special_event;
 
       set((s) => ({
         sceneHistory: [...s.sceneHistory, outcome],
@@ -425,7 +547,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         ],
       }));
 
-      if (data.stage_advance) {
+      if (data.stage_advance && !isOfficeHours) {
         get().advanceStage(getNextStage(get().stage));
       }
 
@@ -435,12 +557,22 @@ export const useGameStore = create<GameState>((set, get) => ({
           set({ activeCutscene: "demo_day_success", stage: "win" });
           return;
         }
-        set({ activeCutscene: data.special_event });
+        // Delay purchase cutscene so Alex's reaction voice finishes first
+        // Estimate speech duration: ~2.5 words/sec + 1.5s buffer for TTS latency
+        if (data.special_event === "user_purchase") {
+          const wordCount = data.dialogue.split(/\s+/).length;
+          const speechMs = Math.max(3000, (wordCount / 2.5) * 1000 + 6500);
+          setTimeout(() => set({ activeCutscene: "user_purchase" }), speechMs);
+        } else {
+          set({ activeCutscene: data.special_event });
+        }
       }
 
       if (newMetrics.runway <= 0) set({ activeCutscene: "game_over" });
       if (newMetrics.hype * newMetrics.runway >= 1_000_000_000) set({ activeCutscene: "unicorn", stage: "win" });
-    } catch {
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e instanceof DOMException && e.name === "AbortError") return;
       set({ isLoading: false, sceneStep: "greeting" });
     }
   },
@@ -469,6 +601,8 @@ Generate a FOLLOW-UP response and new choices. Continue the conversation natural
 If the conversation has reached a natural conclusion (2-7 turns), you may generate a shorter list of choices or wrap-up choices.
 The greeting should be the NPC's next line continuing the conversation.`;
 
+    const controller = get()._sceneAbortController;
+    const timeout = setTimeout(() => controller?.abort(), 20000);
     try {
       const res = await fetch("/api/scene", {
         method: "POST",
@@ -481,9 +615,15 @@ The greeting should be the NPC's next line continuing the conversation.`;
           sceneHistory: get().sceneHistory,
           keyEvents: get().keyEvents,
         }),
+        signal: controller?.signal,
       });
+      clearTimeout(timeout);
 
+      if (controller?.signal.aborted) return;
       const data = await res.json();
+
+      // Prefetch voice audio for instant playback
+      prefetchSceneVoices(data.greeting, data.choices, part.npc.id);
 
       set({
         generatedGreeting: data.greeting,
@@ -493,7 +633,9 @@ The greeting should be the NPC's next line continuing the conversation.`;
         lastNpcReaction: null,
         lastChoiceId: null,
       });
-    } catch {
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e instanceof DOMException && e.name === "AbortError") return;
       set({
         sceneComplete: true,
         sceneStep: "reaction",
@@ -514,6 +656,10 @@ The greeting should be the NPC's next line continuing the conversation.`;
           // Generate next part's scene
           const nextPart = template.parts[nextIdx] as DemoDayPartTemplate;
 
+          // Create new abort controller for demo_day next-part fetch
+          state._sceneAbortController?.abort();
+          const demoDayController = new AbortController();
+
           set({
             sceneStep: "generating",
             demoDayPartIndex: nextIdx,
@@ -522,8 +668,10 @@ The greeting should be the NPC's next line continuing the conversation.`;
             generatedGreeting: null,
             generatedChoices: null,
             isLoading: true,
+            _sceneAbortController: demoDayController,
           });
 
+          const timeout = setTimeout(() => demoDayController.abort(), 20000);
           // Fire off scene generation for next part
           fetch("/api/scene", {
             method: "POST",
@@ -536,9 +684,13 @@ The greeting should be the NPC's next line continuing the conversation.`;
               sceneHistory: get().sceneHistory,
               keyEvents: get().keyEvents,
             }),
+            signal: demoDayController.signal,
           })
             .then((res) => res.json())
             .then((data) => {
+              clearTimeout(timeout);
+              if (demoDayController.signal.aborted) return;
+              prefetchSceneVoices(data.greeting, data.choices, nextPart.npc.id);
               set({
                 generatedGreeting: data.greeting,
                 generatedChoices: data.choices,
@@ -546,7 +698,10 @@ The greeting should be the NPC's next line continuing the conversation.`;
                 isLoading: false,
               });
             })
-            .catch(() => {
+            .catch((e) => {
+              clearTimeout(timeout);
+              if (e instanceof DOMException && e.name === "AbortError") return;
+              // Do NOT prefetch voice here (API is already failing)
               set({
                 generatedGreeting: "What do you think?",
                 generatedChoices: [
@@ -564,15 +719,19 @@ The greeting should be the NPC's next line continuing the conversation.`;
       }
     }
 
+    // Abort any pending scene fetches
+    state._sceneAbortController?.abort();
+    clearVoiceCache();
+    clearScenePrefetch();
+
     // Grant paying user when completing a user conversation
+    // Note: runway/hype rewards are handled by applySpecialEventRewards via "user_purchase" special event
     const isUserScene = state.activeScene === "user_chat_1" || state.activeScene === "user_chat_2";
     if (isUserScene && state.sceneMessages.length >= 2) {
       const newCount = state.payingUsers + 1;
       set({
         payingUsers: newCount,
         keyEvents: [...state.keyEvents, `Got paying user #${newCount}! Customer signed up after conversation.`],
-        actionFeedback: `💰 You got a paying user! (${newCount} total) +$1,500`,
-        metrics: { ...state.metrics, runway: state.metrics.runway + 1500, hype: Math.min(100, state.metrics.hype + 3) },
       });
     }
 
@@ -588,6 +747,7 @@ The greeting should be the NPC's next line continuing the conversation.`;
       sceneComplete: false,
       sceneMessages: [],
       demoDayPartIndex: 0,
+      _sceneAbortController: null,
     });
   },
 
@@ -663,6 +823,9 @@ The greeting should be the NPC's next line continuing the conversation.`;
   },
 
   resetGame: () => {
+    get()._sceneAbortController?.abort();
+    clearVoiceCache();
+    clearScenePrefetch();
     set({
       started: false,
       startupName: "",
@@ -689,6 +852,7 @@ The greeting should be the NPC's next line continuing the conversation.`;
       activeCutscene: null,
       isLoading: false,
       actionFeedback: null,
+      _sceneAbortController: null,
     });
   },
 

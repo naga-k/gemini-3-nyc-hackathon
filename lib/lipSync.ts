@@ -61,7 +61,7 @@ export class LipSyncEngine {
     if (!this.audioContext || !this.analyser) return;
 
     if (this.audioContext.state === "suspended") {
-      await this.audioContext.resume();
+      try { await this.audioContext.resume(); } catch { return; }
     }
 
     // Stop any current playback

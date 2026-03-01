@@ -57,11 +57,17 @@ export const SCENE_TEMPLATES: Record<string, AnyTemplate> = {
     npc: { id: "user", name: "Alex (Early User)", emoji: "👤" },
     sceneType: "user_feedback",
     sceneContext: "Player is meeting a potential user/customer for the first time to get feedback on their early product idea. This is important: talking to users gives the founder real insights that will help them when they apply to YC. Garry Tan cares deeply about whether founders have talked to real users.",
-    geminiInstructions: `Generate a greeting where the user is curious but honest about trying the product.
+    geminiInstructions: `This is a 2-EXCHANGE conversation. The greeting is exchange 0, then the player picks twice.
+
+GREETING: Alex describes a SPECIFIC pain point related to the startup's product. Curious but skeptical.
 Generate 3 choices that test whether the founder LISTENS vs PITCHES vs ASKS ABOUT MONEY.
 One choice should be about listening to the user's problems first.
 One should be about pitching/explaining the vision.
 One should be about asking if they'd pay or use it.
+
+EXCHANGE 1: Alex reacts to the founder's approach. If they listened → excited. If they pitched → lukewarm.
+EXCHANGE 2: Alex decides to buy (the game engine forces this automatically).
+
 IMPORTANT: If the founder listens well, the reaction should include specific user insights they learned (e.g. "your onboarding is confusing but the core feature saves me 2 hours a week"). These details will show up in Garry's YC interview later.`,
   },
 
@@ -116,13 +122,24 @@ DECISION POLICY: The player is back after rejection. Check gameState.payingUsers
     location: "YC office — orange walls, whiteboards",
     npc: { id: "garry", name: "Garry Tan", emoji: "🧑‍💼" },
     sceneType: "office_hours",
-    sceneContext: "Player is in YC office hours with Garry. He's their mentor and wants to see progress.",
-    geminiInstructions: `Generate a greeting that references the player's journey so far — their YC application, what they've built, any user conversations.
+    sceneContext: "Player is in YC office hours with Garry. He's their mentor and wants to see progress. This is a 2-exchange scene that ends with Garry giving the green light for Demo Day.",
+    geminiInstructions: `This is a 2-EXCHANGE conversation. The greeting is exchange 0, then the player picks twice.
+
+GREETING: Garry asks about progress. Reference the player's journey — YC acceptance, user conversations, what they've built.
 Be direct: "show me your numbers" or "where are you stuck?"
 Generate 3 choices about different challenges:
 1. A growth/metrics problem (retention, acquisition, etc.)
 2. A technical/product problem (tech debt, shipping speed, etc.)
-3. An overly optimistic "everything is great" answer (which Garry should see through)`,
+3. An overly optimistic "everything is great" answer (which Garry should see through)
+
+EXCHANGE 1: Garry reacts to their answer. Pushes back, gives specific tactical advice. Tests them.
+EXCHANGE 2: Garry gives the green light. Says something like "You're ready. Go crush Demo Day."
+Set stage_advance: true and scene_complete: true on exchange 2.
+
+METRIC GUIDELINES:
+- Good conversation: hype +5 to +10, energy -1
+- Garry sees through BS: hype -3, energy -1
+- On exchange 2, ALWAYS set stage_advance: true and scene_complete: true.`,
   },
 
   user_chat_2: {
@@ -132,12 +149,16 @@ Generate 3 choices about different challenges:
     npc: { id: "user", name: "Alex (Early User)", emoji: "👤" },
     sceneType: "user_followup",
     sceneContext: "Player is following up with the same early user who tried the product before. The user has been using a newer version.",
-    geminiInstructions: `Generate a greeting that references the user's PREVIOUS experience with the product (check sceneHistory for user_chat_1).
-The user should note what's improved or changed.
+    geminiInstructions: `This is a 2-EXCHANGE conversation. The greeting is exchange 0, then the player picks twice.
+
+GREETING: Alex references their PREVIOUS experience with the product (check sceneHistory for user_chat_1). Notes what's improved or changed. Has a new pain point or feature request.
 Generate 3 choices:
 1. Deep dive into usage patterns / what to improve next
 2. Test virality / would they recommend it
-3. Share excitement about upcoming Demo Day`,
+3. Share excitement about upcoming Demo Day
+
+EXCHANGE 1: Alex reacts to the founder's approach. Gets more engaged.
+EXCHANGE 2: Alex decides to upgrade/pay more (the game engine forces this automatically).`,
   },
 
   yc_dinner: {

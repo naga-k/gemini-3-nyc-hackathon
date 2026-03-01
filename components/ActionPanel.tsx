@@ -11,12 +11,25 @@ export default function ActionPanel() {
   const activeScene = useGameStore((s) => s.activeScene);
   const executeAction = useGameStore((s) => s.executeAction);
   const playScene = useGameStore((s) => s.playScene);
+  const prefetchScene = useGameStore((s) => s.prefetchScene);
   const garryRejected = useGameStore((s) => s.garryRejected);
   const actionsThisStage = useGameStore((s) => s.actionsThisStage);
   const actionFeedback = useGameStore((s) => s.actionFeedback);
   const clearActionFeedback = useGameStore((s) => s.clearActionFeedback);
 
   const actions = getActionsForStage(stage);
+
+  // Prefetch scene data + voice for all scene actions while user is on hub
+  useEffect(() => {
+    if (activeScene) return; // don't prefetch while in a scene
+    for (const action of actions) {
+      if (action.type === "scene" && action.sceneId) {
+        let sceneId = action.sceneId;
+        if (sceneId === "yc_apply_1" && garryRejected) sceneId = "yc_apply_2";
+        prefetchScene(sceneId);
+      }
+    }
+  }, [actions, activeScene, garryRejected, prefetchScene]);
 
   useEffect(() => {
     if (actionFeedback) {

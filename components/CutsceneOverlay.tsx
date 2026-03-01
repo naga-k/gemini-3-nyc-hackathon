@@ -84,6 +84,7 @@ function LayoffScene({ onContinue }: { onContinue: () => void }) {
           playsInline
           className="w-full rounded-lg"
           onEnded={() => setVideoEnded(true)}
+          onError={() => setVideoEnded(true)}
         />
         {/* Subtitle while video plays */}
         {!videoEnded && (
@@ -173,6 +174,7 @@ const STARTUP_OPTIONS = [
 export default function CutsceneOverlay() {
   const activeCutscene = useGameStore((s) => s.activeCutscene);
   const dismissCutscene = useGameStore((s) => s.dismissCutscene);
+  const dismissScene = useGameStore((s) => s.dismissScene);
   const resetGame = useGameStore((s) => s.resetGame);
   const metrics = useGameStore((s) => s.metrics);
   const startupName = useGameStore((s) => s.startupName);
@@ -253,6 +255,76 @@ export default function CutsceneOverlay() {
     );
   }
 
+  // ─── Stripe-style Purchase Cutscene ─────────────────────
+  if (activeCutscene === "user_purchase") {
+    const txId = `txn_${Math.random().toString(36).slice(2, 10)}`;
+    const now = new Date();
+    const timestamp = `${now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-zinc-950 border border-green-500/50 rounded-2xl max-w-sm w-full overflow-hidden">
+          {/* Green accent bar */}
+          <div className="h-1.5 bg-gradient-to-r from-green-400 to-emerald-500" />
+
+          <div className="p-6 space-y-5">
+            {/* Checkmark + header */}
+            <div className="text-center space-y-2">
+              <div className="mx-auto w-14 h-14 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                <svg className="w-7 h-7 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-white">Payment Successful</h2>
+            </div>
+
+            {/* Transaction card */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider">From</p>
+                  <p className="text-zinc-200 text-sm font-medium">Alex</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider">To</p>
+                  <p className="text-zinc-200 text-sm font-medium">{startupName || "Your Startup"}</p>
+                </div>
+              </div>
+
+              <div className="border-t border-zinc-800 pt-3">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Amount</p>
+                <p className="text-2xl font-bold text-white">$1,500<span className="text-zinc-500 text-sm font-normal">.00</span></p>
+              </div>
+
+              <div className="flex justify-between text-xs text-zinc-600">
+                <span>{txId}</span>
+                <span>{timestamp}</span>
+              </div>
+            </div>
+
+            {/* Metric badge */}
+            <div className="flex justify-center">
+              <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium px-3 py-1.5 rounded-full">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m0-16l-4 4m4-4l4 4" />
+                </svg>
+                +$1,500 Runway
+              </span>
+            </div>
+
+            {/* Dismiss button */}
+            <button
+              onClick={() => { dismissCutscene(); dismissScene(); }}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-medium py-3 rounded-lg transition-colors"
+            >
+              Nice!
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Standard Cutscenes ────────────────────────────────
 
   const scenes: Record<
@@ -272,6 +344,8 @@ export default function CutsceneOverlay() {
       title: "YOU'RE IN!",
       body: `Welcome to Y Combinator.\n\nGarry Tan accepted ${startupName} into the batch.\n\n+$500,000 funding. Energy restored.\n\nTime to build.`,
       emoji: "🏆",
+      imageSrc: "/assets/scene-demoday.png",
+      imageAlt: "YC Demo Day stage",
       color: "border-orange-500/50",
       buttonText: "Enter YC Batch →",
       onButton: dismissCutscene,

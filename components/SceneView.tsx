@@ -3,7 +3,7 @@
 import { useGameStore, resolveCurrentTemplatePart } from "@/lib/gameState";
 import { getTemplate, isDemoDayTemplate } from "@/lib/scenes";
 import type { DemoDayTemplate } from "@/lib/scenes";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function SceneView() {
   const activeScene = useGameStore((s) => s.activeScene);
@@ -19,12 +19,36 @@ export default function SceneView() {
   const generatedChoices = useGameStore((s) => s.generatedChoices);
   const sceneMessages = useGameStore((s) => s.sceneMessages);
   const sceneComplete = useGameStore((s) => s.sceneComplete);
+  const lastNpcReactionEvent = useGameStore((s) => s.lastNpcReaction?.special_event);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [loadingChoice, setLoadingChoice] = useState<number | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sceneMessages.length, sceneStep, generatedGreeting]);
+
+  // Reset loading choice indicator when scene step changes
+  useEffect(() => {
+    setLoadingChoice(null);
+  }, [sceneStep]);
+
+  // Auto-flow for user scenes: no manual "Continue" or "Leave" buttons
+  const isAutoFlowScene = activeScene === "user_chat_1" || activeScene === "user_chat_2" || activeScene === "office_hours";
+  useEffect(() => {
+    if (!isAutoFlowScene || sceneStep !== "reaction" || isLoading) return;
+
+    if (!sceneComplete) {
+      // Auto-continue to next exchange after pause (allow time for voice to play)
+      const timer = setTimeout(() => continueScene(), 5000);
+      return () => clearTimeout(timer);
+    } else if (lastNpcReactionEvent !== "user_purchase") {
+      // Auto-dismiss scene after final exchange (cutscene overlay handles the transition)
+      // Skip auto-dismiss for user_purchase — the purchase cutscene timer in gameState handles it
+      const timer = setTimeout(() => dismissScene(), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isAutoFlowScene, sceneStep, sceneComplete, isLoading, lastNpcReactionEvent, continueScene, dismissScene]);
 
   if (!activeScene) return null;
 
@@ -128,28 +152,9 @@ export default function SceneView() {
               </div>
             )}
 
-            {/* Current reaction */}
+            {/* Metric deltas (dialogue already in sceneMessages) */}
             {sceneStep === "reaction" && lastNpcReaction && (
               <>
-                {selectedChoiceLabel && (
-                  <div className="flex justify-end">
-                    <div className="max-w-[70%]">
-                      <div className={playerBubble}>{selectedChoiceLabel}</div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="max-w-[70%]">
-                  <div className={npcBubble}>{lastNpcReaction.dialogue}</div>
-                </div>
-
-                {lastNpcReaction.inner_thoughts && (
-                  <p className="text-[10px] text-zinc-400 italic ml-1 drop-shadow max-w-[70%]">
-                    {lastNpcReaction.inner_thoughts}
-                  </p>
-                )}
-
-                {/* Metric deltas */}
                 {(lastNpcReaction.metric_changes.hype !== 0 ||
                   lastNpcReaction.metric_changes.runway !== 0 ||
                   lastNpcReaction.metric_changes.energy !== 0) && (
@@ -200,23 +205,35 @@ export default function SceneView() {
         <div className="relative px-3 pb-3">
           {sceneStep === "greeting" && generatedChoices && (
             <div className="flex gap-2">
-              {generatedChoices.map((choice, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => makeChoice(idx)}
-                  disabled={isLoading}
-                  className="flex-1 text-center px-3 py-3 rounded-xl bg-black/70 backdrop-blur-sm border border-white/15 hover:bg-black/80 hover:border-orange-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]"
-                >
-                  <p className="text-sm font-medium text-white">{choice.label}</p>
-                  {choice.subtext && (
-                    <p className="text-[10px] text-zinc-400 mt-0.5">{choice.subtext}</p>
-                  )}
-                </button>
-              ))}
+              {generatedChoices.map((choice, idx) => {
+                const isThisLoading = loadingChoice === idx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setLoadingChoice(idx);
+                      makeChoice(idx);
+                    }}
+                    disabled={isLoading}
+                    className={`flex-1 text-center px-3 py-3 rounded-xl backdrop-blur-sm border transition-all disabled:cursor-not-allowed active:scale-[0.97] ${
+                      isThisLoading
+                        ? "bg-orange-600/80 border-orange-500/50"
+                        : "bg-black/70 border-white/15 hover:bg-black/80 hover:border-orange-500/40 disabled:opacity-50"
+                    }`}
+                  >
+                    <p className="text-sm font-medium text-white">
+                      {isThisLoading ? "Thinking..." : choice.label}
+                    </p>
+                    {!isThisLoading && choice.subtext && (
+                      <p className="text-[10px] text-zinc-400 mt-0.5">{choice.subtext}</p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          {sceneStep === "reaction" && (
+          {sceneStep === "reaction" && !isAutoFlowScene && (
             <div className="flex gap-2">
               {!sceneComplete && (
                 <button
